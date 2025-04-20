@@ -6,19 +6,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF2196F3), // Голубой для кнопок и акцентов
-    onPrimary = Color.White,
-    background = Color(0xFFE3F2FD), // Светло-голубой фон
+    primary = Color(0xFF2196F3),
+    secondary = Color(0xFF03DAC5),
+    background = Color(0xFFF5F5F5),
     surface = Color.White,
-    onSurface = Color.Black,
-    secondary = Color(0xFF90CAF9) // Более светлый голубой
+    onPrimary = Color.White,
+    onSecondary = Color.Black,
+    onBackground = Color.Black,
+    onSurface = Color.Black
 )
 
 @Composable
-fun ShoppingListAppTheme(content: @Composable () -> Unit) {
+fun PacketAppTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = LightColorScheme,
-        typography = Typography,
         content = content
     )
 }

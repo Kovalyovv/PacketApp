@@ -1,39 +1,32 @@
 package com.example.packetapp.ui.screens
 
-import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.packetapp.ui.viewmodel.LoginUiState
-import com.example.packetapp.ui.viewmodel.LoginViewModel
-import com.example.packetapp.ui.viewmodel.LoginViewModelFactory
+import com.example.packetapp.ui.viewmodel.ResetPasswordUiState
+import com.example.packetapp.ui.viewmodel.ResetPasswordViewModel
+import com.example.packetapp.ui.viewmodel.ResetPasswordViewModelFactory
 
 @Composable
-fun LoginScreen(
-    onLoginSuccess: () -> Unit,
-    onNavigateToRegister: () -> Unit,
-    onNavigateToForgotPassword: () -> Unit
+fun ResetPasswordScreen(
+    onPasswordReset: () -> Unit,
+    onNavigateToLogin: () -> Unit
 ) {
-    val context = LocalContext.current
-    val sharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-    val viewModel: LoginViewModel = viewModel(
-        factory = LoginViewModelFactory(sharedPreferences)
+    val viewModel: ResetPasswordViewModel = viewModel(
+        factory = ResetPasswordViewModelFactory()
     )
     val uiState by viewModel.uiState
 
-    // Убедимся, что onLoginSuccess вызывается только один раз
-    if (uiState.isSuccess) {
-        LaunchedEffect(Unit) {
-            println("LoginScreen: Navigating to MainScreen due to isSuccess")
-            onLoginSuccess()
-            viewModel.resetState() // Сбрасываем состояние после навигации
+    LaunchedEffect(uiState.isSuccess) {
+        if (uiState.isSuccess) {
+            println("ResetPasswordScreen: Navigating to LoginScreen due to isSuccess")
+            onPasswordReset()
         }
     }
 
@@ -45,28 +38,28 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Вход",
+            text = "Сброс пароля",
             fontSize = 24.sp
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        var email by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("") }
+        var code by remember { mutableStateOf("") }
+        var newPassword by remember { mutableStateOf("") }
 
         OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
+            value = code,
+            onValueChange = { code = it },
+            label = { Text("Код восстановления") },
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Пароль") },
+            value = newPassword,
+            onValueChange = { newPassword = it },
+            label = { Text("Новый пароль") },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
@@ -75,7 +68,7 @@ fun LoginScreen(
 
         Button(
             onClick = {
-                viewModel.login(email, password, onLoginSuccess)
+                viewModel.resetPassword(code, newPassword, onPasswordReset)
             },
             modifier = Modifier.fillMaxWidth(),
             enabled = !uiState.isLoading
@@ -86,24 +79,16 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("Войти")
+                Text("Сбросить пароль")
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
         TextButton(
-            onClick = onNavigateToForgotPassword
+            onClick = onNavigateToLogin
         ) {
-            Text("Забыли пароль?")
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        TextButton(
-            onClick = onNavigateToRegister
-        ) {
-            Text("Регистрация")
+            Text("Вернуться к входу")
         }
 
         uiState.errorMessage?.let {

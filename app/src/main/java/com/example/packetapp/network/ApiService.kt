@@ -2,9 +2,13 @@ package com.example.packetapp.network
 
 
 
+import android.content.Context
+import com.example.packetapp.data.AuthManager
+import com.example.packetapp.network.models.ForgotPasswordRequest
 import com.example.packetapp.network.models.UserLoginRequest
 import com.example.packetapp.network.models.UserRegisterRequest
 import com.example.packetapp.network.models.LoginResponse
+import com.example.packetapp.network.models.UserDTO
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -56,6 +60,67 @@ class ApiService(private val client: HttpClient) {
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
     }
+
+    suspend fun requestResetCode(email: String): String {
+        val response = client.post("$baseUrl/users/forgot-password") {
+            contentType(ContentType.Application.Json)
+            setBody(ForgotPasswordRequest(email))
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> {
+                val successBody = response.bodyAsText()
+                val jsonElement = Json.parseToJsonElement(successBody)
+                jsonElement.jsonObject["message"]?.jsonPrimitive?.content
+                    ?: "Код отправлен"
+            }
+            HttpStatusCode.NotFound -> throw Exception("Пользователь с таким email не найден")
+            HttpStatusCode.BadRequest -> {
+                val errorBody = response.bodyAsText()
+                val jsonElement = Json.parseToJsonElement(errorBody)
+                val errorMessage = jsonElement.jsonObject["error"]?.jsonPrimitive?.content
+                    ?: "Ошибка запроса"
+                throw Exception(errorMessage)
+            }
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun getUserProfile(accessToken: String): UserDTO {
+        val response = client.get("$baseUrl/users/profile") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<UserDTO>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun resetPassword(code: String, newPassword: String) {
+        val response = client.post("$baseUrl/users/reset-password") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("code" to code, "newPassword" to newPassword))
+        }
+        when (response.status) {
+            HttpStatusCode.OK -> Unit
+            HttpStatusCode.BadRequest -> throw Exception("Неверный код восстановления")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+
+    suspend fun refreshToken(refreshToken: String): LoginResponse {
+        val response = client.post("$baseUrl/users/refresh-token") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("refreshToken" to refreshToken))
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<LoginResponse>()
+            HttpStatusCode.Unauthorized -> throw Exception("Недействительный refresh-токен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+    
 }
 
 @Serializable

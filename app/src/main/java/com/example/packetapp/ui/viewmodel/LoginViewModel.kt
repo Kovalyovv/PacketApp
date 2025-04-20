@@ -1,30 +1,34 @@
 package com.example.packetapp.ui.viewmodel
 
-import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.packetapp.network.KtorClient
-//import io.ktor.client.network.socket.*
-import io.ktor.client.plugins.*
-import io.ktor.http.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-class LoginViewModel : ViewModel() {
-    private val _uiState = MutableStateFlow(LoginUiState())
-    val uiState: StateFlow<LoginUiState> = _uiState
+data class LoginUiState(
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val isSuccess: Boolean = false
+)
 
-    private lateinit var sharedPreferences: SharedPreferences
+class LoginViewModel(
+    private val sharedPreferences: SharedPreferences
+) : ViewModel() {
+    val uiState = mutableStateOf(LoginUiState())
+    private var hasNavigated = false
 
-    fun initialize(context: Context) {
-        sharedPreferences = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
-    }
+    fun login(email: String, password: String, onLoginSuccess: () -> Unit) {
+        if (hasNavigated) {
+            println("Login already navigated, ignoring")
+            return
+        }
 
-    fun login(email: String, password: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            println("Login attempt with email: $email")
+            uiState.value = uiState.value.copy(isLoading = true, errorMessage = null)
             try {
                 val response = KtorClient.apiService.login(email, password)
                 sharedPreferences.edit()
@@ -32,36 +36,35 @@ class LoginViewModel : ViewModel() {
                     .putString("refresh_token", response.refreshToken)
                     .putInt("user_id", response.user.id)
                     .apply()
-                _uiState.value = _uiState.value.copy(isLoading = false, isSuccess = true)
-            } catch (e: ClientRequestException) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = if (e.response.status == HttpStatusCode.Unauthorized) {
-                        "Неверные учетные данные"
-                    } else {
-                        e.response.status.description
-                    }
-                )
+                println("Tokens saved: access=${response.token}, refresh=${response.refreshToken}, userId=${response.user.id}")
+                uiState.value = uiState.value.copy(isLoading = false, isSuccess = true)
+                hasNavigated = true
+                println("Calling onLoginSuccess")
+                onLoginSuccess()
             } catch (e: Exception) {
-                val errorMessage = when (e.message) {
-                    "Invalid credentials" -> "Неверные учетные данные"
-                    else -> e.message ?: "Ошибка соединения"
-                }
-                _uiState.value = _uiState.value.copy(
+                println("Login failed: ${e.message}")
+                uiState.value = uiState.value.copy(
                     isLoading = false,
-                    errorMessage = errorMessage
+                    errorMessage = e.message ?: "Ошибка соединения"
                 )
             }
         }
     }
 
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(errorMessage = null)
+    fun resetState() {
+        uiState.value = LoginUiState()
+        hasNavigated = false
     }
 }
 
-data class LoginUiState(
-    val isLoading: Boolean = false,
-    val isSuccess: Boolean = false,
-    val errorMessage: String? = null
-)
+class LoginViewModelFactory(
+    private val sharedPreferences: SharedPreferences
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(LoginViewModel::class.java)) {
+            return LoginViewModel(sharedPreferences) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
