@@ -28,9 +28,7 @@ class AuthManager(context: Context) {
     }
 
     fun getUserId(): Int? {
-        val userId = prefs.getInt("user_id", -1)
-        println("getUserId: $userId")
-        return if (userId != -1) userId else null
+        return prefs.getInt("user_id", -1).takeIf { it != -1 }
     }
 
     fun isUserLoggedIn(): Boolean {

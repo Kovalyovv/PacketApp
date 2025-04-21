@@ -1,6 +1,7 @@
 package com.example.packetapp.network
 
 import android.content.Context
+import com.example.packetapp.data.AuthManager
 import io.ktor.client.*
 import io.ktor.client.engine.android.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -10,6 +11,9 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
 object KtorClient {
+    private var authManager: AuthManager? = null
+    private var isInitialized = false
+
     private val httpClient = HttpClient(Android) {
         install(ContentNegotiation) {
             json(Json {
@@ -25,5 +29,14 @@ object KtorClient {
         install(WebSockets)
     }
 
-    val apiService = ApiService(httpClient)
+    // Метод для инициализации KtorClient с AuthManager
+    fun initialize(authManager: AuthManager) {
+        this.authManager = authManager
+        this.isInitialized = true
+    }
+
+    val apiService: ApiService by lazy {
+        check(isInitialized) { "KtorClient must be initialized with AuthManager before accessing apiService" }
+        ApiService(httpClient, authManager!!)
+    }
 }

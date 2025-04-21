@@ -4,6 +4,8 @@ package com.example.packetapp.network
 
 import android.content.Context
 import com.example.packetapp.data.AuthManager
+import com.example.packetapp.models.GroupListItem
+import com.example.packetapp.models.GroupSummary
 import com.example.packetapp.network.models.ForgotPasswordRequest
 import com.example.packetapp.network.models.UserLoginRequest
 import com.example.packetapp.network.models.UserRegisterRequest
@@ -20,8 +22,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 
-class ApiService(private val client: HttpClient) {
+class ApiService(private val client: HttpClient, private val authManager: AuthManager) {
     private val baseUrl = "http://10.0.2.2:8080" // Замените на ваш URL сервера
+
 //    private val baseUrl = "http://127.0.0.1:8080" // Замените на ваш URL сервера
 
 
@@ -120,8 +123,110 @@ class ApiService(private val client: HttpClient) {
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
     }
-    
+
+
+    suspend fun getGroupSummaries(accessToken: String): List<GroupSummary> {
+        val response = client.get("$baseUrl/groups/summaries") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<List<GroupSummary>>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun getGroupItems(accessToken: String, groupId: Int): List<GroupListItem> {
+        val response = client.get("$baseUrl/groups/$groupId/items") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<List<GroupListItem>>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun addItemToGroup(accessToken: String, groupId: Int, itemId: Int, quantity: Int, priority: Int, budget: Int?): GroupListItem {
+        val response = client.post("$baseUrl/groups/$groupId/items") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf(
+                "itemId" to itemId,
+                "quantity" to quantity,
+                "priority" to priority,
+                "budget" to budget
+            ))
+        }
+        return when (response.status) {
+            HttpStatusCode.Created -> response.body<GroupListItem>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun buyItem(accessToken: String, groupId: Int, itemId: Int, price: Int) {
+        val userId = authManager.getUserId() ?: throw Exception("Пользователь не авторизован")
+        val response = client.put("$baseUrl/group-list-items/$itemId/buy") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf(
+                "groupId" to groupId,
+                "boughtBy" to userId,
+                "price" to price
+            ))
+        }
+        when (response.status) {
+            HttpStatusCode.OK -> return
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun markItemsAsViewed(accessToken: String, groupId: Int, itemIds: List<Int>) {
+        val response = client.post("$baseUrl/groups/$groupId/mark-viewed") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("itemIds" to itemIds))
+        }
+        when (response.status) {
+            HttpStatusCode.OK -> return
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun joinGroup(accessToken: String, inviteCode: String): JoinGroupResponse {
+        val response = client.post("$baseUrl/join-group") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(JoinGroupRequest(inviteCode))
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<JoinGroupResponse>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            HttpStatusCode.BadRequest -> {
+                val errorBody = response.bodyAsText()
+                val jsonElement = Json.parseToJsonElement(errorBody)
+                val errorMessage = jsonElement.jsonObject["error"]?.jsonPrimitive?.content
+                    ?: "Неверный инвайт-код"
+                throw Exception(errorMessage)
+            }
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
 }
 
 @Serializable
 data class ErrorResponse(val error: String)
+
+@Serializable
+data class JoinGroupRequest(val inviteCode: String)
+
+@Serializable
+data class JoinGroupResponse(
+    val groupId: Int,
+    val groupName: String,
+    val message: String
+)

@@ -9,12 +9,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.AnnotatedString
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.packetapp.data.AuthManager
 import com.example.packetapp.network.KtorClient
 import com.example.packetapp.ui.screens.ForgotPasswordScreen
+import com.example.packetapp.ui.screens.GroupScreen
 import com.example.packetapp.ui.screens.LoginScreen
 import com.example.packetapp.ui.screens.MainScreen
 import com.example.packetapp.ui.screens.RegisterScreen
@@ -27,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val authManager = AuthManager(this)
+        KtorClient.initialize(authManager)
 
         setContent {
             PacketAppTheme {
@@ -178,7 +182,54 @@ fun AppNavGraph(startDestination: String) {
                         }
                         launchSingleTop = true
                     }
+                },
+                onNavigateToGroup = { groupId, highlightItemId ->
+                    println("Navigating to GroupScreen with groupId: $groupId, highlightItemId: $highlightItemId")
+                    val route = if (highlightItemId != null) {
+                        "group/$groupId/$highlightItemId"
+                    } else {
+                        "group/$groupId"
+                    }
+                    navController.navigate(route)
                 }
+            )
+        }
+        composable(
+            route = "group/{groupId}",
+            arguments = listOf(navArgument("groupId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getInt("groupId") ?: 0
+            println("Navigating to GroupScreen with groupId: $groupId")
+            GroupScreen(
+                groupId = groupId,
+                onBack = {
+                    println("onBack called in GroupScreen, navigating back")
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            route = "group/{groupId}/{highlightItemId}?",
+            arguments = listOf(
+                navArgument("groupId") { type = NavType.IntType },
+                navArgument("highlightItemId") {
+                    type = NavType.StringType // Изменяем тип на StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getInt("groupId") ?: 0
+            val highlightItemId = backStackEntry.arguments?.getString("highlightItemId")?.toIntOrNull()
+            println("Navigating to GroupScreen with groupId: $groupId, highlightItemId: $highlightItemId")
+            GroupScreen(
+                groupId = groupId,
+                onBack = {
+                    println("onBack called in GroupScreen, navigating back")
+                    navController.popBackStack()
+                },
+                highlightItemId = highlightItemId
             )
         }
     }
