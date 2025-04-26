@@ -11,6 +11,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.packetapp.data.AuthManager
+import com.example.packetapp.network.KtorClient.apiService
 import com.example.packetapp.ui.viewmodel.LoginUiState
 import com.example.packetapp.ui.viewmodel.LoginViewModel
 import com.example.packetapp.ui.viewmodel.LoginViewModelFactory
@@ -22,18 +24,17 @@ fun LoginScreen(
     onNavigateToForgotPassword: () -> Unit
 ) {
     val context = LocalContext.current
-    val sharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+    val authManager = AuthManager(context)
     val viewModel: LoginViewModel = viewModel(
-        factory = LoginViewModelFactory(sharedPreferences)
+        factory = LoginViewModelFactory(apiService, authManager)
     )
     val uiState by viewModel.uiState
 
-    // Убедимся, что onLoginSuccess вызывается только один раз
     if (uiState.isSuccess) {
         LaunchedEffect(Unit) {
             println("LoginScreen: Navigating to MainScreen due to isSuccess")
             onLoginSuccess()
-            viewModel.resetState() // Сбрасываем состояние после навигации
+            viewModel.resetState()
         }
     }
 

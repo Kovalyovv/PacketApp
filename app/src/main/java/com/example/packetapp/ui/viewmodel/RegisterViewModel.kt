@@ -31,6 +31,7 @@ class RegisterViewModel : ViewModel() {
                     .putString("access_token", response.token)
                     .putString("refresh_token", response.refreshToken)
                     .putInt("user_id", response.user.id)
+                    .putString("email", email)
                     .apply()
                 _uiState.value = _uiState.value.copy(isLoading = false, isSuccess = true)
             } catch (e: ClientRequestException) {

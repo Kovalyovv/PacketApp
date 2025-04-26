@@ -48,5 +48,5 @@ data class GroupListItem(
     val quantity: Int,
     val priority: Int,
     val budget: Int?,
-    val isViewed: Boolean
+
 )

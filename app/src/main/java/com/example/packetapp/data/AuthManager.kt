@@ -6,13 +6,16 @@ import android.content.SharedPreferences
 class AuthManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
-    fun saveAuthData(accessToken: String, refreshToken: String, userId: Int) {
-        val success = prefs.edit()
+    fun saveAuthData(accessToken: String, refreshToken: String, userId: Int, name: String? = null, email: String? = null) {
+        prefs.edit()
             .putString("access_token", accessToken)
             .putString("refresh_token", refreshToken)
             .putInt("user_id", userId)
-            .commit() // Заменяем apply() на commit()
-        println("Tokens saved: access=$accessToken, refresh=$refreshToken, userId=$userId, success=$success")
+            .putString("user_name", name)
+            .putString("user_email", email)
+            .commit() // Используем commit для синхронного сохранения
+        println("Tokens saved: access=$accessToken, refresh=$refreshToken, userId=$userId, name = $name, email = $email")
+
     }
 
     fun getAccessToken(): String? {
@@ -28,7 +31,20 @@ class AuthManager(context: Context) {
     }
 
     fun getUserId(): Int? {
-        return prefs.getInt("user_id", -1).takeIf { it != -1 }
+        val userId = if (prefs.contains("user_id")) prefs.getInt("user_id", -1) else null
+        return if (userId == -1) null else userId
+    }
+
+    fun getUserName(): String? {
+        return prefs.getString("user_name", null)
+    }
+
+    fun getUserEmail(): String? {
+        return prefs.getString("user_email", null)
+    }
+
+    fun clearAuthData() {
+        prefs.edit().clear().commit()
     }
 
     fun isUserLoggedIn(): Boolean {
@@ -36,10 +52,5 @@ class AuthManager(context: Context) {
         val refreshToken = getRefreshToken()
         println("isUserLoggedIn: accessToken=$accessToken, refreshToken=$refreshToken")
         return accessToken != null && refreshToken != null
-    }
-
-    fun clearAuthData() {
-        val success = prefs.edit().clear().commit() // Заменяем apply() на commit()
-        println("Clearing auth data, success=$success")
     }
 }

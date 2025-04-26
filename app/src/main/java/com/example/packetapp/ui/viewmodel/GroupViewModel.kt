@@ -6,11 +6,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.packetapp.data.AuthManager
 import com.example.packetapp.models.GroupListItem
+import com.example.packetapp.models.Item
 import com.example.packetapp.network.KtorClient
+import com.example.packetapp.network.models.BuyItemRequest
 import kotlinx.coroutines.launch
 
 data class GroupUiState(
     val items: List<GroupListItem> = emptyList(),
+    val searchQuery: String = "",
+    val searchResults: List<Item> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null
 )
@@ -24,6 +28,7 @@ class GroupViewModel(
 
     init {
         loadItems()
+        markAllActivitiesAsViewed()
     }
 
     fun loadItems() {
@@ -33,18 +38,33 @@ class GroupViewModel(
                 val accessToken = getValidAccessToken()
                 val items = KtorClient.apiService.getGroupItems(accessToken, groupId)
                 _uiState.value = _uiState.value.copy(items = items, isLoading = false)
-
-                // Отмечаем непросмотренные товары как просмотренные
-                val unseenItemIds = items.filter { !it.isViewed }.map { it.id }
-                if (unseenItemIds.isNotEmpty()) {
-                    KtorClient.apiService.markItemsAsViewed(accessToken, groupId, unseenItemIds)
-                    val updatedItems = items.map { item ->
-                        if (item.id in unseenItemIds) item.copy(isViewed = true) else item
-                    }
-                    _uiState.value = _uiState.value.copy(items = updatedItems)
-                }
             } catch (e: Exception) {
                 handleError(e, "Ошибка загрузки товаров")
+            }
+        }
+    }
+
+    fun updateSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+        if (query.isNotEmpty()) {
+            searchItems(query)
+        } else {
+            _uiState.value = _uiState.value.copy(searchResults = emptyList())
+        }
+    }
+
+    fun clearSearch() {
+        _uiState.value = _uiState.value.copy(searchQuery = "", searchResults = emptyList())
+    }
+
+    private fun searchItems(query: String) {
+        viewModelScope.launch {
+            try {
+                val accessToken = getValidAccessToken()
+                val results = KtorClient.apiService.searchItems(accessToken, query)
+                _uiState.value = _uiState.value.copy(searchResults = results)
+            } catch (e: Exception) {
+                handleError(e, "Ошибка поиска товаров")
             }
         }
     }
@@ -55,22 +75,46 @@ class GroupViewModel(
             try {
                 val accessToken = getValidAccessToken()
                 KtorClient.apiService.addItemToGroup(accessToken, groupId, itemId, quantity, priority, budget)
-                loadItems() // Обновляем список с сервера
+                loadItems()
+                clearSearch() // Очищаем поиск после добавления
             } catch (e: Exception) {
                 handleError(e, "Ошибка добавления товара")
             }
         }
     }
 
-    fun buyItem(itemId: Int, price: Int) { // Добавляем параметр price
+    fun buyItem(itemId: Int, quantityBought: Int, price: Int) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            _uiState.value = _uiState.value.copy(isLoading = true)
             try {
                 val accessToken = getValidAccessToken()
-                KtorClient.apiService.buyItem(accessToken, groupId, itemId, price)
+                val userId = authManager.getUserId() ?: throw IllegalStateException("User not logged in")
+                val request = BuyItemRequest(
+                    groupId = groupId,
+                    boughtBy = userId,
+                    price = price,
+                    quantity = quantityBought
+                )
+                KtorClient.apiService.buyItem(accessToken, groupId, itemId, request)
                 loadItems()
             } catch (e: Exception) {
-                handleError(e, "Ошибка покупки товара")
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = e.message ?: "Failed to mark item as bought",
+                    isLoading = false
+                )
+            }
+        }
+    }
+
+    private fun markAllActivitiesAsViewed() {
+        viewModelScope.launch {
+            try {
+                val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
+                KtorClient.apiService.markAllActivitiesAsViewed(accessToken, groupId)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Ошибка отметки просмотра: ${e.message}"
+                )
             }
         }
     }
@@ -78,14 +122,13 @@ class GroupViewModel(
     private suspend fun getValidAccessToken(): String {
         var accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
         try {
-            // Проверяем токен вызовом API (например, getGroupItems)
             KtorClient.apiService.getGroupItems(accessToken, groupId)
             return accessToken
         } catch (e: Exception) {
             if (e.message == "Токен недействителен") {
                 val refreshToken = authManager.getRefreshToken() ?: throw Exception("Refresh-токен отсутствует")
                 val response = KtorClient.apiService.refreshToken(refreshToken)
-                authManager.saveAuthData(response.token, response.refreshToken, response.user.id)
+                authManager.saveAuthData(response.token, response.refreshToken, response.user.id, response.user.name, response.user.email)
                 return authManager.getAccessToken() ?: throw Exception("Не удалось обновить токен")
             } else {
                 throw e

@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.packetapp"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -86,5 +86,7 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    implementation ("joda-time:joda-time:2.12.5")
 
 }

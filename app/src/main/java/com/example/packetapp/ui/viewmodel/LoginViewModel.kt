@@ -1,11 +1,12 @@
 package com.example.packetapp.ui.viewmodel
 
-import android.content.SharedPreferences
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.packetapp.network.KtorClient
+import com.example.packetapp.data.AuthManager
+import com.example.packetapp.network.models.LoginResponse
+import com.example.packetapp.network.ApiService
 import kotlinx.coroutines.launch
 
 data class LoginUiState(
@@ -15,55 +16,50 @@ data class LoginUiState(
 )
 
 class LoginViewModel(
-    private val sharedPreferences: SharedPreferences
+    private val apiService: ApiService,
+    private val authManager: AuthManager // Используем AuthManager вместо SharedPreferences
 ) : ViewModel() {
-    val uiState = mutableStateOf(LoginUiState())
-    private var hasNavigated = false
+
+    private val _uiState = mutableStateOf(LoginUiState())
+    val uiState get() = _uiState
 
     fun login(email: String, password: String, onLoginSuccess: () -> Unit) {
-        if (hasNavigated) {
-            println("Login already navigated, ignoring")
-            return
-        }
-
         viewModelScope.launch {
-            println("Login attempt with email: $email")
-            uiState.value = uiState.value.copy(isLoading = true, errorMessage = null)
+            _uiState.value = _uiState.value.copy(isLoading = true)
             try {
-                val response = KtorClient.apiService.login(email, password)
-                sharedPreferences.edit()
-                    .putString("access_token", response.token)
-                    .putString("refresh_token", response.refreshToken)
-                    .putInt("user_id", response.user.id)
-                    .apply()
-                println("Tokens saved: access=${response.token}, refresh=${response.refreshToken}, userId=${response.user.id}")
-                uiState.value = uiState.value.copy(isLoading = false, isSuccess = true)
-                hasNavigated = true
-                println("Calling onLoginSuccess")
+                val loginResponse = apiService.login(email, password)
+                // Сохраняем данные через AuthManager
+                authManager.saveAuthData(
+                    accessToken = loginResponse.token,
+                    refreshToken = loginResponse.refreshToken,
+                    userId = loginResponse.user.id,
+                    name = loginResponse.user.name,
+                    email = loginResponse.user.email
+                )
+                _uiState.value = _uiState.value.copy(isSuccess = true, isLoading = false)
                 onLoginSuccess()
             } catch (e: Exception) {
-                println("Login failed: ${e.message}")
-                uiState.value = uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = e.message ?: "Ошибка соединения"
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = e.message ?: "Неизвестная ошибка",
+                    isLoading = false
                 )
             }
         }
     }
 
     fun resetState() {
-        uiState.value = LoginUiState()
-        hasNavigated = false
+        _uiState.value = LoginUiState()
     }
 }
 
 class LoginViewModelFactory(
-    private val sharedPreferences: SharedPreferences
+    private val apiService: ApiService,
+    private val authManager: AuthManager
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LoginViewModel::class.java)) {
-            return LoginViewModel(sharedPreferences) as T
+            return LoginViewModel(apiService, authManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

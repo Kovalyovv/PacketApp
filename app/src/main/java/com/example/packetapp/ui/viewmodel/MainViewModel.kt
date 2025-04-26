@@ -1,5 +1,6 @@
 package com.example.packetapp.ui.viewmodel
 
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,43 +15,43 @@ data class MainUiState(
     val errorMessage: String? = null
 )
 
-class MainViewModel(
-    private val authManager: AuthManager
-) : ViewModel() {
-    val uiState = mutableStateOf(MainUiState())
+class MainViewModel(private val authManager: AuthManager) : ViewModel() {
+    private val _uiState = mutableStateOf(MainUiState())
+    val uiState: State<MainUiState> = _uiState
 
     init {
-        loadGroupSummaries()
+        loadGroups()
     }
 
-    fun loadGroupSummaries() {
+    fun loadGroups() {
         viewModelScope.launch {
-            uiState.value = uiState.value.copy(isLoading = true, errorMessage = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
-                val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
-                val summaries = KtorClient.apiService.getGroupSummaries(accessToken)
-                uiState.value = uiState.value.copy(groupSummaries = summaries, isLoading = false)
+                val accessToken = getValidAccessToken()
+                val groups = KtorClient.apiService.getUserGroups(accessToken)
+                _uiState.value = _uiState.value.copy(groupSummaries = groups, isLoading = false)
             } catch (e: Exception) {
-                if (e.message == "Токен недействителен") {
-                    try {
-                        val refreshToken = authManager.getRefreshToken() ?: throw Exception("Refresh-токен отсутствует")
-                        val response = KtorClient.apiService.refreshToken(refreshToken)
-                        authManager.saveAuthData(response.token, response.refreshToken, response.user.id)
-                        val newAccessToken = authManager.getAccessToken()!!
-                        val summaries = KtorClient.apiService.getGroupSummaries(newAccessToken)
-                        uiState.value = uiState.value.copy(groupSummaries = summaries, isLoading = false)
-                    } catch (refreshError: Exception) {
-                        uiState.value = uiState.value.copy(
-                            isLoading = false,
-                            errorMessage = "Ошибка авторизации: ${refreshError.message}"
-                        )
-                    }
-                } else {
-                    uiState.value = uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = e.message ?: "Ошибка загрузки данных"
-                    )
-                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = e.message ?: "Ошибка загрузки групп"
+                )
+            }
+        }
+    }
+
+    private suspend fun getValidAccessToken(): String {
+        var accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
+        try {
+            KtorClient.apiService.getUserGroups(accessToken)
+            return accessToken
+        } catch (e: Exception) {
+            if (e.message == "Токен недействителен") {
+                val refreshToken = authManager.getRefreshToken() ?: throw Exception("Refresh-токен отсутствует")
+                val response = KtorClient.apiService.refreshToken(refreshToken)
+                authManager.saveAuthData(response.token, response.refreshToken, response.user.id, response.user.name, response.user.email)
+                return authManager.getAccessToken() ?: throw Exception("Не удалось обновить токен")
+            } else {
+                throw e
             }
         }
     }
