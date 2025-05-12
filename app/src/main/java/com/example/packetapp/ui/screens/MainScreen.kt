@@ -47,64 +47,64 @@ fun MainScreen(
         mainViewModel.loadGroups()
     }
 
-    // Диалоговое окно для ввода инвайт-кода
-    if (showJoinDialog) {
-        AlertDialog(
-            modifier = Modifier
-                .fillMaxWidth(fraction = 0.9f)
-                .wrapContentHeight(),
-            onDismissRequest = {
-                showJoinDialog = false
-                inviteCode = ""
-                joinGroupViewModel.clearState()
-            },
-            title = { Text("Присоединиться к группе") },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = inviteCode,
-                        onValueChange = { inviteCode = it },
-                        label = { Text("Инвайт-код") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    joinGroupUiState.errorMessage?.let {
-                        Text(
-                            text = it,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (inviteCode.isNotBlank()) {
-                            joinGroupViewModel.joinGroup(inviteCode)
-                            showJoinDialog = false
-                            inviteCode = ""
-                            joinGroupViewModel.clearState()
-                        }
-                    },
-
-                ) {
-                    Text("Присоединиться")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showJoinDialog = false
-                    inviteCode = ""
-                    joinGroupViewModel.clearState()
-                }) {
-                    Text("Отмена")
-                }
-            }
-        )
-    }
+//    // Диалоговое окно для ввода инвайт-кода
+//    if (showJoinDialog) {
+//        AlertDialog(
+//            modifier = Modifier
+//                .fillMaxWidth(fraction = 0.9f)
+//                .wrapContentHeight(),
+//            onDismissRequest = {
+//                showJoinDialog = false
+//                inviteCode = ""
+//                joinGroupViewModel.clearState()
+//            },
+//            title = { Text("Присоединиться к группе") },
+//            text = {
+//                Column(
+//                    modifier = Modifier.fillMaxWidth()
+//                ) {
+//                    OutlinedTextField(
+//                        value = inviteCode,
+//                        onValueChange = { inviteCode = it },
+//                        label = { Text("Инвайт-код") },
+//                        modifier = Modifier.fillMaxWidth()
+//                    )
+//                    Spacer(modifier = Modifier.height(8.dp))
+//                    joinGroupUiState.errorMessage?.let {
+//                        Text(
+//                            text = it,
+//                            color = MaterialTheme.colorScheme.error,
+//                            modifier = Modifier.align(Alignment.CenterHorizontally)
+//                        )
+//                    }
+//                }
+//            },
+//            confirmButton = {
+//                Button(
+//                    onClick = {
+//                        if (inviteCode.isNotBlank()) {
+//                            joinGroupViewModel.joinGroup(inviteCode)
+//                            showJoinDialog = false
+//                            inviteCode = ""
+//                            joinGroupViewModel.clearState()
+//                        }
+//                    },
+//
+//                ) {
+//                    Text("Присоединиться")
+//                }
+//            },
+//            dismissButton = {
+//                TextButton(onClick = {
+//                    showJoinDialog = false
+//                    inviteCode = ""
+//                    joinGroupViewModel.clearState()
+//                }) {
+//                    Text("Отмена")
+//                }
+//            }
+//        )
+//    }
 
     Scaffold(
         topBar = {
@@ -112,11 +112,11 @@ fun MainScreen(
                 title = { Text("Мои группы") }
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showJoinDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Присоединиться к группе")
-            }
-        }
+//        floatingActionButton = {
+//            FloatingActionButton(onClick = { showJoinDialog = true }) {
+//                Icon(Icons.Default.Add, contentDescription = "Присоединиться к группе")
+//            }
+//        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -174,7 +174,7 @@ fun GroupSummaryItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {

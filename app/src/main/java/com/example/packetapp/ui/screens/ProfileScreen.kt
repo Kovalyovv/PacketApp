@@ -14,7 +14,8 @@ import com.example.packetapp.data.AuthManager
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onNavigateToReceiptHistory: () -> Unit // Новый callback для навигации
 ) {
     val authManager = AuthManager(LocalContext.current)
     val userEmail = authManager.getUserEmail() ?: "Неизвестно"
@@ -90,6 +91,16 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Сохранить изменения")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Новая кнопка для истории чеков
+            Button(
+                onClick = onNavigateToReceiptHistory,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("История чеков")
             }
 
             Spacer(modifier = Modifier.height(16.dp))

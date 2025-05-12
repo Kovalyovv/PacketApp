@@ -8,5 +8,6 @@ data class PersonalListItem(
     val itemId: Int,
     val itemName: String,
     val quantity: Int,
+    val price: Int,
     val addedAt: String
 )

@@ -7,7 +7,7 @@ import org.joda.time.format.DateTimeFormatter
 import java.util.Locale
 
 object DateUtils {
-    private val outputFormatter: DateTimeFormatter = DateTimeFormat.forPattern("dd MMMM yyyy : HH:mm")
+    private val outputFormatter: DateTimeFormatter = DateTimeFormat.forPattern("d MMMM yyyy | HH:mm")
         .withLocale(Locale("ru"))
         .withZone(DateTimeZone.forID("Europe/Moscow"))
 

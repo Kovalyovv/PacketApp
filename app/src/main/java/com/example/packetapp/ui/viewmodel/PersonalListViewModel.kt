@@ -13,7 +13,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-
 data class PersonalListUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -112,11 +111,11 @@ class PersonalListViewModel(private val authManager: AuthManager) : ViewModel() 
         }
     }
 
-    fun addItemToPersonalList(itemId: Int, quantity: Int) {
+    fun addItemToPersonalList(itemId: Int, price: Int, quantity: Int, itemName: String) {
         viewModelScope.launch {
             try {
                 val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
-                val newItem = KtorClient.apiService.addItemToPersonalList(accessToken, itemId, quantity)
+                val newItem = KtorClient.apiService.addItemToPersonalList(accessToken, itemId, itemName, quantity, price)
                 val updatedList = _uiState.value.personalList + newItem
                 _uiState.value = _uiState.value.copy(
                     personalList = updatedList,
@@ -132,11 +131,11 @@ class PersonalListViewModel(private val authManager: AuthManager) : ViewModel() 
         }
     }
 
-    fun markAsPurchased(itemId: Int, price: Int) {
+    fun markAsPurchased(itemId: Int) {
         viewModelScope.launch {
             try {
                 val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
-                KtorClient.apiService.markAsPurchased(accessToken, itemId, price)
+                KtorClient.apiService.markAsPurchased(accessToken, itemId)
                 val updatedList = _uiState.value.personalList.filter { it.id != itemId }
                 _uiState.value = _uiState.value.copy(personalList = updatedList)
             } catch (e: Exception) {

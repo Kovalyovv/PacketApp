@@ -1,9 +1,11 @@
 package com.example.packetapp.ui.screens
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
@@ -11,7 +13,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.packetapp.data.AuthManager
@@ -54,7 +59,6 @@ fun PersonalListScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (!uiState.showHistory) {
-                // Поле поиска
                 SearchField(
                     query = uiState.searchQuery,
                     onQueryChange = { viewModel.updateSearchQuery(it) },
@@ -62,22 +66,22 @@ fun PersonalListScreen() {
                     isSearchActive = uiState.isSearchActive
                 )
 
-                // Выпадающий список с результатами поиска
                 if (uiState.isSearchActive && uiState.searchResults.isNotEmpty()) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
+                            .padding(top = 8.dp)
+                            .heightIn(min = 400.dp, max = 900.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
                         LazyColumn(
-                            modifier = Modifier.heightIn(max = 200.dp)
+                            modifier = Modifier.heightIn(max = 900.dp)
                         ) {
                             items(uiState.searchResults) { item ->
                                 SearchResultItem(
                                     item = item,
                                     onAddClick = { quantity ->
-                                        viewModel.addItemToPersonalList(item.id, quantity)
+                                        viewModel.addItemToPersonalList(item.id, item.price, quantity, item.name)
                                     }
                                 )
                             }
@@ -87,7 +91,6 @@ fun PersonalListScreen() {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Личный список
                 if (uiState.isLoading) {
                     CircularProgressIndicator()
                 } else if (uiState.personalList.isEmpty()) {
@@ -100,13 +103,12 @@ fun PersonalListScreen() {
                         items(uiState.personalList) { item ->
                             PersonalListItemCard(
                                 item = item,
-                                onMarkPurchased = { price -> viewModel.markAsPurchased(item.id, price) }
+                                onMarkPurchased = { viewModel.markAsPurchased(item.id) } // Убрали price
                             )
                         }
                     }
                 }
             } else {
-                // История покупок
                 if (uiState.isLoading) {
                     CircularProgressIndicator()
                 } else if (uiState.purchaseHistory.isEmpty()) {
@@ -123,7 +125,6 @@ fun PersonalListScreen() {
                 }
             }
 
-            // Сообщение об ошибке
             uiState.errorMessage?.let {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -167,30 +168,50 @@ fun SearchResultItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(12.dp)
+            )
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
             Text(text = item.name, fontSize = 16.sp)
             item.category?.let {
-                Text(text = "Категория: $it", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = "Категория: $it",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Text(text = "Цена: ${item.price} руб.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = "Цена: ${item.price} руб.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        OutlinedTextField(
-            value = quantity,
-            onValueChange = { quantity = it },
-            label = { Text("Кол-во") },
-            modifier = Modifier.width(100.dp)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Button(
-            onClick = {
-                val qty = quantity.toIntOrNull() ?: 1
-                onAddClick(qty)
-            }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Добавить")
+            CompactQuantityField(
+                quantity = quantity,
+                onQuantityChange = { quantity = it }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    val qty = quantity.toIntOrNull() ?: 1
+                    onAddClick(qty)
+                }
+            ) {
+                Text("Добавить")
+            }
         }
     }
 }
@@ -198,7 +219,7 @@ fun SearchResultItem(
 @Composable
 fun PersonalListItemCard(
     item: PersonalListItem,
-    onMarkPurchased: (price: Int) -> Unit
+    onMarkPurchased: (Int) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -210,23 +231,24 @@ fun PersonalListItemCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Товар: ${item.itemName}", fontSize = 16.sp)
-                Text(text = "Количество: ${item.quantity}", fontSize = 14.sp)
+            Column(modifier = Modifier.weight(1f, fill = true)) {
+
+                Text(text = item.itemName, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    text = "Добавлено: ${DateUtils.formatDateTime(item.addedAt)}",
-                    fontSize = 14.sp
+                    text = "Количество: ${item.quantity}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "Цена: ${item.price} руб.",
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
             Button(
-                onClick = {
-                    // Здесь нужно передать цену. Для примера используем заглушку.
-                    // В реальном приложении цену нужно получить из Items или передать из SearchResultItem.
-                    val price = 100 // Замени на реальную цену товара
-                    onMarkPurchased(price)
-                }
+                onClick = { onMarkPurchased(item.price) },
+                enabled = true
             ) {
                 Text("Куплено")
             }
@@ -239,21 +261,54 @@ fun PurchaseHistoryItemCard(item: PurchaseHistoryItem) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp)
+            .wrapContentHeight(), // Позволяем карточке подстраиваться под содержимое
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(10.dp)
+                .padding(horizontal = 2.dp)
         ) {
-            Text(text = "Товар: ${item.itemName}", fontSize = 16.sp)
-            Text(text = "Количество: ${item.quantity}", fontSize = 14.sp)
-            Text(text = "Цена: ${item.price} руб.", fontSize = 14.sp)
+            Text(
+                text = "Товар: ${item.itemName}",
+                fontSize = 14.sp,
+                modifier = Modifier.wrapContentHeight() // Текст может занимать несколько строк
+            )
+            Text(
+                text = "Количество: ${item.quantity} | Цена: ${item.price} руб.",
+                fontSize = 12.sp
+            )
             Text(
                 text = "Куплено: ${DateUtils.formatDateTime(item.purchasedAt)}",
-                fontSize = 14.sp
+                fontSize = 12.sp
             )
         }
     }
+}
+
+@Composable
+fun CompactQuantityField(quantity: String, onQuantityChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = quantity,
+        onValueChange = onQuantityChange,
+        label = { Text("Кол-во", fontSize = 12.sp) }, // Уменьшаем размер текста метки
+
+        modifier = Modifier
+            .width(80.dp)
+            .height(52.dp) // Слегка увеличиваем высоту для лучшей видимости
+            .padding(0.dp),
+        textStyle = TextStyle(fontSize = 14.sp), // Уменьшаем размер текста ввода
+        singleLine = true, // Ограничиваем поле одной строкой
+        keyboardOptions = KeyboardOptions.Default.copy(
+            keyboardType = KeyboardType.Number // Ограничиваем ввод только числами
+        ),
+        colors = TextFieldDefaults.colors(
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+            unfocusedIndicatorColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    )
 }

@@ -8,7 +8,7 @@ import com.example.packetapp.data.AuthManager
 import com.example.packetapp.models.GroupListItem
 import com.example.packetapp.models.Item
 import com.example.packetapp.network.KtorClient
-import com.example.packetapp.network.models.BuyItemRequest
+import com.example.packetapp.models.BuyItemRequest
 import kotlinx.coroutines.launch
 
 data class GroupUiState(

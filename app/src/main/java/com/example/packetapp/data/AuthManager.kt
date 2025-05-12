@@ -2,6 +2,7 @@ package com.example.packetapp.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 
 class AuthManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -22,6 +23,12 @@ class AuthManager(context: Context) {
         val token = prefs.getString("access_token", null)
         println("getAccessToken: $token")
         return token
+    }
+    fun saveTokens(accessToken: String, refreshToken: String) {
+        prefs.edit(commit = true) {
+            putString("access_token", accessToken)
+                .putString("refresh_token", refreshToken)
+        }
     }
 
     fun getRefreshToken(): String? {

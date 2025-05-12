@@ -1,5 +1,6 @@
 package com.example.packetapp
 
+
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,8 +10,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.materialIcon
-import com.example.packetapp.R
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -24,8 +23,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -33,7 +36,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.packetapp.data.AuthManager
+import com.example.packetapp.network.ApiService
 import com.example.packetapp.network.KtorClient
+import com.example.packetapp.ui.screens.ChatScreen
 import com.example.packetapp.ui.screens.ForgotPasswordScreen
 import com.example.packetapp.ui.screens.GroupScreen
 import com.example.packetapp.ui.screens.GroupsScreen
@@ -41,11 +46,16 @@ import com.example.packetapp.ui.screens.LoginScreen
 import com.example.packetapp.ui.screens.MainScreen
 import com.example.packetapp.ui.screens.PersonalListScreen
 import com.example.packetapp.ui.screens.ProfileScreen
+import com.example.packetapp.ui.screens.ReceiptHistoryScreen
+import com.example.packetapp.ui.screens.ReceiptScreen
 import com.example.packetapp.ui.screens.RegisterScreen
 import com.example.packetapp.ui.screens.ResetPasswordScreen
+import com.example.packetapp.ui.screens.ScanQrScreen
 import com.example.packetapp.ui.theme.PacketAppTheme
+import com.example.packetapp.ui.viewmodel.ReceiptViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,12 +123,25 @@ class MainActivity : ComponentActivity() {
 fun AppNavGraph(startDestination: String) {
     val navController = rememberNavController()
 
+    // Получаем context через LocalContext
+    val context = LocalContext.current
+
+    // Инициализируем зависимости
+    val authManager = remember { AuthManager(context) }
+
+    val apiService = ApiService(KtorClient.httpClient, authManager)
+
+    // Создаём ReceiptViewModel с помощью viewModel() и фабрики
+    val receiptViewModel: ReceiptViewModel = viewModel(
+        factory = ReceiptViewModelFactory(authManager)
+    )
+
     // Определяем элементы нижней навигации
     val navItems = listOf(
         NavItem("main", "Главная", { rememberVectorPainter(Icons.Default.Home) }),
         NavItem("personal_list", "Список", { rememberVectorPainter(Icons.Default.List) }),
         NavItem("groups", "Группы", { rememberVectorPainter(Icons.Default.Person) }),
-        NavItem("qr", "QR", { painterResource(id = R.drawable.qr_code_icon32) }),
+        NavItem("scan", "QR", { painterResource(id = R.drawable.qr_code_icon32) }),
         NavItem("profile", "Профиль", { rememberVectorPainter(Icons.Default.AccountCircle) })
     )
 
@@ -133,7 +156,7 @@ fun AppNavGraph(startDestination: String) {
                 NavigationBar {
                     navItems.forEach { item ->
                         NavigationBarItem(
-                            icon = { Icon(item.icon(),contentDescription = item.title) },
+                            icon = { Icon(item.icon(), contentDescription = item.title) },
                             label = { Text(item.title) },
                             selected = currentRoute == item.route,
                             onClick = {
@@ -239,7 +262,7 @@ fun AppNavGraph(startDestination: String) {
                 MainScreen(
                     onLogout = {
                         println("onLogout called in AppNavGraph")
-                        AuthManager(navController.context).clearAuthData()
+                        authManager.clearAuthData()
                         navController.navigate("login") {
                             popUpTo(navController.graph.startDestinationId) {
                                 inclusive = true
@@ -254,7 +277,11 @@ fun AppNavGraph(startDestination: String) {
                         } else {
                             "group/$groupId"
                         }
-                        navController.navigate(route)
+                        navController.navigate(route){
+                            popUpTo(navController.graph.startDestinationId)
+                            launchSingleTop = true
+                        }
+
                     }
                 )
             }
@@ -281,16 +308,30 @@ fun AppNavGraph(startDestination: String) {
                 ProfileScreen(
                     onLogout = {
                         println("onLogout called in ProfileScreen")
-                        AuthManager(navController.context).clearAuthData()
+                        authManager.clearAuthData()
                         navController.navigate("login") {
                             popUpTo(navController.graph.startDestinationId) {
                                 inclusive = true
                             }
                             launchSingleTop = true
                         }
+                    },
+                    onNavigateToReceiptHistory = {
+                        println("Navigating to ReceiptHistoryScreen")
+                        navController.navigate("receipt_history")
                     }
                 )
             }
+
+            composable("receipt_history") {
+                println("Navigating to ReceiptHistoryScreen")
+                ReceiptHistoryScreen(
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
             composable(
                 route = "group/{groupId}",
                 arguments = listOf(navArgument("groupId") { type = NavType.IntType })
@@ -299,10 +340,8 @@ fun AppNavGraph(startDestination: String) {
                 println("Navigating to GroupScreen with groupId: $groupId")
                 GroupScreen(
                     groupId = groupId,
-                    onBack = {
-                        println("onBack called in GroupScreen, navigating back")
-                        navController.popBackStack()
-                    }
+                    onBack = { navController.popBackStack() },
+                    onNavigateToChat = { navController.navigate("chat/$it") }
                 )
             }
             composable(
@@ -325,18 +364,56 @@ fun AppNavGraph(startDestination: String) {
                         println("onBack called in GroupScreen, navigating back")
                         navController.popBackStack()
                     },
-                    highlightItemId = highlightItemId
+                    highlightItemId = highlightItemId,
+                    onNavigateToChat = { navController.navigate("chat/$it") }
+                )
+            }
+            composable("scan") {
+                ScanQrScreen(
+                    onQrCodeScanned = { qrCode ->
+                        navController.navigate("receipt/$qrCode")
+                    },
+                    onBack = { navController.popBackStack() },
+                    context = context,
+                    navigateToReceipt = { qrCode -> navController.navigate("receipt/$qrCode") }, // Передаем навигацию с QR-кодом
+                    receiptViewModel = receiptViewModel
+                )
+            }
+            composable("receipt/{qrCode}") { backStackEntry ->
+                val qrCode = backStackEntry.arguments?.getString("qrCode")
+                ReceiptScreen(
+                    onBack = { navController.popBackStack() },
+                    context = context,
+                    receiptViewModel = receiptViewModel
+                )
+            }
+            composable("chat/{groupId}") { backStackEntry ->
+                val groupId = backStackEntry.arguments?.getString("groupId")?.toIntOrNull() ?: -1
+                ChatScreen(
+                    groupId = groupId,
+                    onBack = { navController.popBackStack() }
                 )
             }
         }
     }
 }
 
-// Перенесём NavItem сюда, так как он используется в AppNavGraph
-
-
 data class NavItem(
     val route: String,
     val title: String,
-    val icon: @Composable () -> Painter // Теперь иконка — это Composable-функция, возвращающая Painter
+    val icon: @Composable () -> Painter
 )
+
+
+
+class ReceiptViewModelFactory(
+    private val authManager: AuthManager
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(ReceiptViewModel::class.java)) {
+            return ReceiptViewModel(authManager) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}

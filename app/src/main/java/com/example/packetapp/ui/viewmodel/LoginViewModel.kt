@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.packetapp.data.AuthManager
-import com.example.packetapp.network.models.LoginResponse
 import com.example.packetapp.network.ApiService
 import kotlinx.coroutines.launch
 

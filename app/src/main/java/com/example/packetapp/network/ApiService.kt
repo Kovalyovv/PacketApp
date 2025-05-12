@@ -7,25 +7,35 @@ import com.example.packetapp.models.GroupSummary
 import com.example.packetapp.models.Item
 import com.example.packetapp.models.PersonalListItem
 import com.example.packetapp.models.PurchaseHistoryItem
-import com.example.packetapp.network.models.BuyItemRequest
-import com.example.packetapp.network.models.ForgotPasswordRequest
-import com.example.packetapp.network.models.JoinGroupRequest
-import com.example.packetapp.network.models.UserLoginRequest
-import com.example.packetapp.network.models.UserRegisterRequest
-import com.example.packetapp.network.models.LoginResponse
-import com.example.packetapp.network.models.UserDTO
+import com.example.packetapp.models.AddItemRequest
+import com.example.packetapp.models.BuyItemRequest
+import com.example.packetapp.models.ConfirmItemsRequest
+import com.example.packetapp.models.ForgotPasswordRequest
+import com.example.packetapp.models.JoinGroupRequest
+import com.example.packetapp.models.UserLoginRequest
+import com.example.packetapp.models.UserRegisterRequest
+import com.example.packetapp.models.LoginResponse
+import com.example.packetapp.models.UserDTO
+import com.example.packetapp.ui.screens.GroupDTO
+import com.example.packetapp.ui.viewmodel.ProcessedCheckData
+import com.example.packetapp.ui.viewmodel.ProcessedCheckItem
+import com.example.packetapp.ui.viewmodel.ReceiptDTO
 import io.ktor.client.*
+
+import io.ktor.client.HttpClient
 import io.ktor.client.call.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.statement.*
 import io.ktor.http.*
+
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ApiService(private val client: HttpClient, private val authManager: AuthManager) {
-    private val baseUrl = "http://10.0.2.2:8080" // Замени на актуальный URL сервера
+    private val baseUrl = "http://192.168.31.137:8080"
 
     suspend fun login(email: String, password: String): LoginResponse {
         val response = client.post("$baseUrl/users/login") {
@@ -59,6 +69,22 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
             }
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
+    }
+
+    suspend fun getUserGroups(accessToken: String, userId: Int): List<GroupDTO> {
+        val response = client.get("$baseUrl/groups/user/$userId") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return if (response.status == HttpStatusCode.OK) {
+            response.body()
+        } else {
+            throw Exception("Ошибка получения групп: ${response.status.description}")
+        }
+    }
+
+    fun getAccessTokenFromPrefs(context: Context): String {
+        val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("accessToken", "") ?: ""
     }
 
     suspend fun requestResetCode(email: String): String {
@@ -107,6 +133,32 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
     }
+
+    // Универсальная функция для выполнения запроса с обновлением токена
+    private suspend fun <T> executeWithTokenRefresh(
+        request: suspend (String) -> T
+    ): T {
+        val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
+        try {
+            return request(accessToken)
+        } catch (e: Exception) {
+            if (e.message == "Токен недействителен") {
+                // Токен недействителен, пробуем обновить
+                val refreshToken = authManager.getRefreshToken() ?: throw Exception("Refresh-токен отсутствует")
+                val loginResponse = refreshToken(refreshToken)
+
+                // Сохраняем новые токены
+                authManager.saveTokens(loginResponse.token, loginResponse.refreshToken)
+
+                // Повторяем запрос с новым токеном
+                val newAccessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует после обновления")
+                return request(newAccessToken)
+            } else {
+                throw e // Если это не ошибка 401, пробрасываем дальше
+            }
+        }
+    }
+
 
     suspend fun refreshToken(refreshToken: String): LoginResponse {
         val response = client.post("$baseUrl/users/refresh-token") {
@@ -163,27 +215,35 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
         }
     }
 
-    suspend fun addItemToPersonalList(accessToken: String, itemId: Int, quantity: Int): PersonalListItem {
+    suspend fun getItemName(accessToken: String, itemId: Int): String {
+        val response = client.get("$baseUrl/items/$itemId") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return if (response.status == HttpStatusCode.OK) {
+            response.body<String>()
+        } else {
+            throw Exception("Ошибка получения имени товара: ${response.status.description}")
+        }
+    }
+
+    suspend fun addItemToPersonalList(accessToken: String, itemId: Int, itemName: String, quantity: Int, price: Int): PersonalListItem {
         val response = client.post("$baseUrl/personal-list") {
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             contentType(ContentType.Application.Json)
-            setBody(mapOf(
-                "itemId" to itemId,
-                "quantity" to quantity
-            ))
+            setBody(
+                AddItemRequest(itemId, itemName, quantity, price)
+            )
         }
         return when (response.status) {
             HttpStatusCode.Created -> response.body<PersonalListItem>()
             HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
-            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+            else -> throw Exception("Ошибка добавления в личный список: ${response.status.description}")
         }
     }
 
-    suspend fun markAsPurchased(accessToken: String, itemId: Int, price: Int) {
+    suspend fun markAsPurchased(accessToken: String, itemId: Int) {
         val response = client.post("$baseUrl/personal-list/$itemId/mark-purchased") {
             header(HttpHeaders.Authorization, "Bearer $accessToken")
-            contentType(ContentType.Application.Json)
-            setBody(mapOf("price" to price))
         }
         when (response.status) {
             HttpStatusCode.OK -> return
@@ -234,6 +294,17 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
         }
         return when (response.status) {
             HttpStatusCode.OK -> response.body<List<GroupListItem>>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun getGroupItemsReceipt(accessToken: String, groupId: Int): List<ProcessedCheckItem> {
+        val response = client.get("$baseUrl/groups/$groupId/items-receipt") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<List<ProcessedCheckItem>>()
             HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
@@ -293,12 +364,126 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
     }
+
+    @Serializable
+    data class ScanReceiptResponse(
+        val first: ReceiptDTO,
+        val second: ProcessedCheckData,
+        val message: String? = null
+    )
+
+    suspend fun getCheckDataFromServer(accessToken: String, qrCode: String): ScanReceiptResponse {
+        return executeWithTokenRefresh { accessToken ->
+            val response = client.post("$baseUrl/receipts/scan") {
+                header(HttpHeaders.Authorization, "Bearer $accessToken")
+                contentType(ContentType.Application.FormUrlEncoded)
+                setBody(
+                    FormDataContent(Parameters.build {
+                        append("qrCode", qrCode)
+                        append("userId", authManager.getUserId().toString())
+                    })
+                )
+            }
+
+            println("Server response status: ${response.status}")
+            println("Server response body: ${response.bodyAsText()}")
+            val scanResponse = when (response.status) {
+                HttpStatusCode.OK, HttpStatusCode.Conflict -> {
+                    val result = response.body<ScanReceiptResponse>()
+                    println("Deserialized checkData: ${result.second}")
+                    result
+                }
+
+                HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+                else -> throw Exception("Ошибка сервера: ${response.status.description}")
+            }
+
+            return@executeWithTokenRefresh scanResponse
+        }
+
+    }
+
+    suspend fun confirmItems(accessToken: String, receiptId: Int, items: List<ProcessedCheckItem>, groupId: Int?) {
+        println("Sending confirmItems request to $baseUrl/receipts/$receiptId/confirm: receiptId=$receiptId, groupId=$groupId, items=$items")
+        val response = client.post("$baseUrl/receipts/$receiptId/confirm") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(ConfirmItemsRequest(receiptId, items, groupId))
+        }
+        println("Confirm items response status: ${response.status}")
+        if (response.status != HttpStatusCode.OK) {
+            throw Exception("Ошибка подтверждения товаров: ${response.status.description}")
+        }
+    }
+
+    suspend fun addItemsToGroupActivity(accessToken: String, groupId: Int, items: List<ProcessedCheckItem>) {
+        val response = client.post("$baseUrl/groups/$groupId/activity") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(
+                mapOf(
+                    "items" to items
+                )
+            )
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw Exception("Ошибка добавления товаров в активность группы: ${response.status.description}")
+        }
+    }
+
+    suspend fun addItemsToPersonalList(accessToken: String, items: List<ProcessedCheckItem>) {
+        items.forEach { item ->
+            println("Sending item: $item")
+            val response = client.post("$baseUrl/personal-list") {
+                header(HttpHeaders.Authorization, "Bearer $accessToken")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    AddItemRequest(
+                        itemId = null,
+                        itemName = item.name,
+                        quantity = item.quantity.toInt(),
+                        price = item.price
+                    )
+                )
+            }
+            if (response.status != HttpStatusCode.OK) {
+                throw Exception("Ошибка добавления товара ${item.name} в личный список: ${response.status.description}")
+            }
+        }
+    }
+
+    suspend fun getPersonalListItems(accessToken: String, userId: Int): List<ProcessedCheckItem> {
+        val response = client.get("$baseUrl/personal-list/$userId") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return if (response.status == HttpStatusCode.OK) {
+            response.body()
+        } else {
+            throw Exception("Ошибка получения личного списка: ${response.status.description}")
+        }
+    }
+
+    suspend fun getReceiptsHistory(accessToken: String, userId: Int): List<Pair<ReceiptDTO, ProcessedCheckData>> {
+        val response = client.post("$baseUrl/receipts/history") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+
+        if (!response.status.isSuccess()) {
+            throw Exception("Ошибка загрузки истории: ${response.status.description} (Status: ${response.status.value})")
+        }
+
+        return response.body() // Прямое десериализация в List<Pair<ReceiptDTO, ProcessedCheckData>>
+    }
 }
 
 @Serializable
 data class ErrorResponse(val error: String)
 
-
+@Serializable
+data class ReceiptResponse(
+    val receipt: ReceiptDTO,
+    val checkData: ProcessedCheckData
+)
 
 @Serializable
 data class JoinGroupResponse(

@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.packetapp.data.AuthManager
 import com.example.packetapp.network.KtorClient
-import com.example.packetapp.network.models.JoinGroupRequest
+import com.example.packetapp.models.JoinGroupRequest
 import kotlinx.coroutines.launch
 
 data class JoinGroupUiState(
