@@ -11,8 +11,8 @@ import io.ktor.websocket.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.util.UUID
 
 class ChatClient(
     val client: HttpClient = KtorClient.httpClient,
@@ -23,20 +23,14 @@ class ChatClient(
     val messages = _messages.asStateFlow()
     private var currentSession: DefaultClientWebSocketSession? = null
     var isConnected = false
-    private val messageStatuses = mutableMapOf<Int, String>()
-    private val tempToPermanentId = mutableMapOf<Int, Int>() // Map temporary to permanent IDs
+    private val messageStatuses = mutableMapOf<String, String>()
 
     suspend fun loadChatHistory(groupId: Int): List<ChatMessage> {
         val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
         val response = client.get("$baseUrl/chat/$groupId/messages") {
             header(HttpHeaders.Authorization, "Bearer $accessToken")
         }
-        println("ChatClient: ChatMessage class: ${ChatMessage::class.java}")
-        println("ChatClient: ChatMessage fields: ${ChatMessage::class.java.declaredFields.joinToString()}")
-        println("ChatClient: ChatMessage methods: ${ChatMessage::class.java.declaredMethods.joinToString()}")
-
-        val rawJson = response.body<String>()
-        println("ChatClient: Raw JSON response: $rawJson")
+        println("ChatClient: Raw JSON response: ${response.body<String>()}")
         val history = response.body<List<ChatMessage>>()
         history.forEach { message ->
             println("ChatClient: Loaded message: $message")
@@ -70,42 +64,16 @@ class ChatClient(
                                 println("ChatClient: Received WebSocket message with timestamp: ${message.timestamp}")
                                 onMessageReceived(message)
                                 _messages.update { currentMessages ->
-                                    if (message.id > 0 && currentMessages.any { it.id == message.id }) {
-                                        println("ChatClient: Message with id ${message.id} already exists, skipping")
+                                    if (currentMessages.any { it.token == message.token }) {
+                                        println("ChatClient: Message with token ${message.token} already exists, skipping")
                                         currentMessages
                                     } else {
-                                        val tempMessageIndex = currentMessages.indexOfFirst {
-                                            it.id < 0 && it.text == message.text && it.senderId == message.senderId && it.timestamp == message.timestamp
-                                        }
-                                        val updatedMessages = if (tempMessageIndex != -1) {
-                                            // Store temporary-to-permanent ID mapping
-                                            val tempId = currentMessages[tempMessageIndex].id
-                                            tempToPermanentId[tempId] = message.id
-                                            println("ChatClient: Mapped tempId=$tempId to permanentId=${message.id}")
-
-                                            // Replace temporary message
-                                            messageStatuses[tempId] = "SENT"
-                                            val newList = currentMessages.toMutableList().apply {
-                                                set(tempMessageIndex, message)
-                                            }
-
-                                            // Update replyToId for messages referencing the temporary ID
-                                            newList.map { msg ->
-                                                if (msg.replyToId != null && msg.replyToId == tempId) {
-                                                    msg.copy(replyToId = message.id)
-                                                } else {
-                                                    msg
-                                                }
-                                            }
-                                        } else if (message.id > 0) {
-                                            println("ChatClient: Adding new message to list: $message")
-                                            currentMessages + message
-                                        } else {
-                                            currentMessages // Ignore temporary messages from server
-                                        }
-                                        updatedMessages
+                                        println("ChatClient: Adding new message to list: $message")
+                                        currentMessages + message
                                     }
+
                                 }
+
                             }
                             is Frame.Close -> {
                                 println("ChatClient: WebSocket closed: ${frame.readReason()}")
@@ -133,46 +101,37 @@ class ChatClient(
         if (!isConnected || currentSession == null) {
             throw IllegalStateException("WebSocket is not connected")
         }
-        val mappedMessage = message.copy(
-            replyToId = message.replyToId?.let { tempToPermanentId[it] ?: it }
-        )
         try {
-            // Map replyToId to permanent ID if available
-
-            messageStatuses[mappedMessage.id] = "SENDING"
-            currentSession?.sendSerialized(mappedMessage)
-            println("ChatClient: Sent message: $mappedMessage")
+            messageStatuses[message.token] = "SENDING"
+            currentSession?.sendSerialized(message)
+            println("ChatClient: Sent message: $message")
         } catch (e: Exception) {
-            messageStatuses[mappedMessage.id] = "FAILED"
+            messageStatuses[message.token] = "FAILED"
             println("ChatClient: Failed to send message: ${e.message}")
         }
     }
 
-    suspend fun deleteMessage(messageId: Int) {
+    suspend fun deleteMessage(token: String) {
         val accessToken = authManager.getAccessToken() ?: throw Exception("Токен отсутствует")
         try {
-            client.delete("$baseUrl/messages/$messageId") {
+            client.delete("$baseUrl/chat/$token") {
                 header(HttpHeaders.Authorization, "Bearer $accessToken")
             }
-            _messages.update { messages -> messages.filter { it.id != messageId } }
-            println("ChatClient: Message deleted: $messageId")
+            _messages.update { messages -> messages.filter { it.token != token } }
+            println("ChatClient: Message deleted: $token")
         } catch (e: Exception) {
             println("ChatClient: Failed to delete message: ${e.message}")
         }
     }
 
     fun updateMessages(message: ChatMessage) {
-        // Map replyToId to permanent ID if available
-        val mappedMessage = message.copy(
-            replyToId = message.replyToId?.let { tempToPermanentId[it] ?: it }
-        )
-        _messages.update { it + mappedMessage }
-        println("ChatClient: Manually updated messages with: $mappedMessage")
+        _messages.update { it + message }
+        println("ChatClient: Manually updated messages with: $message")
     }
 
-    fun removeMessage(messageId: Int) {
-        _messages.update { messages -> messages.filter { it.id != messageId } }
-        println("ChatClient: Removed message with id: $messageId")
+    fun removeMessage(token: String) {
+        _messages.update { messages -> messages.filter { it.token != token } }
+        println("ChatClient: Removed message with token: $token")
     }
 
     suspend fun disconnect() {

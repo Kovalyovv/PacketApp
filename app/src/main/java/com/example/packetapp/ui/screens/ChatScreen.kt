@@ -1,5 +1,9 @@
 package com.example.packetapp.ui.screens
 
+import android.view.View
+import android.view.ViewTreeObserver
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,12 +19,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.example.packetapp.R
 import com.example.packetapp.data.AuthManager
 import com.example.packetapp.models.ChatMessage
@@ -35,7 +44,10 @@ import com.example.packetapp.utils.DateUtils
 import com.example.packetapp.viewmodel.ChatViewModel
 import org.joda.time.DateTime
 import com.example.packetapp.models.MessageStatus
+import com.example.packetapp.network.ApiService
+import com.example.packetapp.network.KtorClient
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,18 +56,40 @@ fun ChatScreen(
     onBack: () -> Unit
 ) {
     val authManager = AuthManager(LocalContext.current)
-    val chatViewModel = remember { ChatViewModel(authManager = authManager) }
+    val apiService = KtorClient.apiService
+    val chatViewModel = remember { ChatViewModel(authManager = authManager, apiService = apiService) }
     val messages by chatViewModel.messages.collectAsState()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val currentUserId = authManager.getUserId() ?: -1
     var messageText by remember { mutableStateOf("") }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
-    val messageStatuses = remember { mutableStateMapOf<Int, MessageStatus>() }
-    // Используем rememberSaveable для сохранения значения между рекомпозициями
-    var tempMessageIdCounter by rememberSaveable { mutableStateOf(-1) }
+    val messageStatuses = remember { mutableStateMapOf<String, MessageStatus>() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val density = LocalDensity.current
+    val context = LocalContext.current
+    var isKeyboardVisible by remember { mutableStateOf(false) }
+    var offsetY by remember { mutableStateOf(0.dp) }
+    val animatedOffsetY by animateDpAsState(
+        targetValue = offsetY,
+        animationSpec = tween(durationMillis = 200)
+    )
 
-    // Логирование обновления messages
+
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(view) {
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            val insets = ViewCompat.getRootWindowInsets(view)
+            val imeHeight = insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+            isKeyboardVisible = imeHeight > 0
+            offsetY = if (isKeyboardVisible) 50.dp else 0.dp
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose {
+            view.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+        }
+    }
+
     LaunchedEffect(messages) {
         println("ChatScreen: Messages updated, new count: ${messages.size}, messages: $messages")
         if (messages.isNotEmpty()) {
@@ -66,13 +100,11 @@ fun ChatScreen(
         }
     }
 
-    // Загрузка истории и подключение к WebSocket
     LaunchedEffect(Unit) {
         scope.launch {
             try {
                 println("ChatScreen: Connecting to chat for groupId $groupId")
                 chatViewModel.connectToChat(groupId)
-                // Прокручиваем к последнему сообщению после загрузки
                 if (messages.isNotEmpty()) {
                     println("ChatScreen: Initial scroll to last message at index ${messages.size - 1}")
                     listState.scrollToItem(messages.size - 1)
@@ -82,16 +114,37 @@ fun ChatScreen(
             }
         }
     }
+    LaunchedEffect(groupId) {
+        scope.launch {
+            try {
+                println("ChatScreen: Connecting to chat for groupId $groupId")
+                chatViewModel.connectToChat(groupId)
+                chatViewModel.preloadUserNames(groupId)
+            } catch (e: Exception) {
+                println("ChatScreen: Failed to connect to chat or preload names: ${e.message}")
+            }
+        }
+    }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
-                title = { Text("Чат группы") },
+                title = {
+                    Text(
+                        "Чат группы",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         },
         bottomBar = {
@@ -99,92 +152,123 @@ fun ChatScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(8.dp)
+                    .offset(y = -animatedOffsetY) // Анимированное смещение вверх
+                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                // Убираем imePadding()
             ) {
                 replyingTo?.let { replyMessage ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(8.dp)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Ответ на: ${replyMessage.text}",
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 8.dp),
+                                .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 8.dp),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         IconButton(onClick = { replyingTo = null }) {
                             Icon(Icons.Default.Close, contentDescription = "Отменить ответ")
                         }
                     }
+                    Spacer(modifier = Modifier.height(1.dp))
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     BasicTextField(
                         value = messageText,
-                        onValueChange = { messageText = it },
+                        onValueChange = {
+                            messageText = it
+                            if (messageText.isEmpty()) {
+                                offsetY = 0.dp
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .padding(12.dp),
-                        textStyle = TextStyle(fontSize = 16.sp),
+                            .clickable {
+                                keyboardController?.show()
+                            },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
                         decorationBox = { innerTextField ->
-                            if (messageText.isEmpty()) {
-                                Text(
-                                    text = "Введите сообщение...",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    fontSize = 16.sp
-                                )
+                            Box(
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (messageText.isEmpty()) {
+                                    Text(
+                                        text = "Введите сообщение...",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp)
+                                    )
+                                }
+                                innerTextField()
                             }
-                            innerTextField()
                         }
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     IconButton(
                         onClick = {
                             if (messageText.isNotBlank()) {
                                 val timestamp = DateTime.now().toString()
-                                // Генерируем уникальный временный id
-                                val tempId = tempMessageIdCounter
-                                tempMessageIdCounter -= 1 // Уменьшаем счётчик для следующего сообщения
+                                val token = UUID.randomUUID().toString()
                                 val message = ChatMessage(
-                                    id = tempId, // Уникальный временный id
+                                    token = token,
                                     groupId = groupId,
                                     senderId = currentUserId,
                                     text = messageText,
                                     timestamp = timestamp,
-                                    replyToId = replyingTo?.id
+                                    replyToToken = replyingTo?.token
                                 )
                                 scope.launch {
                                     try {
-                                        messageStatuses[tempId] = MessageStatus.SENDING
-                                        // Убрали chatViewModel.updateMessages(message), так как это уже делается в ChatViewModel
-                                        chatViewModel.sendMessage(message, replyingTo?.id)
-                                        messageStatuses[tempId] = MessageStatus.SENT
+                                        messageStatuses[token] = MessageStatus.SENDING
+                                        chatViewModel.sendMessage(message, replyingTo?.token)
+                                        messageStatuses[token] = MessageStatus.SENT
                                         messageText = ""
                                         replyingTo = null
-                                        println("ChatScreen: Message sent successfully with tempId: $tempId")
+                                        offsetY = 0.dp
+                                        println("ChatScreen: Message sent successfully with token: $token")
                                     } catch (e: Exception) {
-                                        messageStatuses[tempId] = MessageStatus.FAILED
+                                        messageStatuses[token] = MessageStatus.FAILED
                                         println("ChatScreen: Failed to send message: ${e.message}")
                                     }
                                 }
                             }
                         },
-                        enabled = messageText.isNotBlank()
+                        enabled = messageText.isNotBlank(),
+                        modifier = Modifier
+                            .background(
+                                if (messageText.isNotBlank())
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(14.dp)
+                            )
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = "Отправить")
+                        Icon(
+                            Icons.Default.Send,
+                            contentDescription = "Отправить",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 }
             }
@@ -193,41 +277,49 @@ fun ChatScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            state = listState
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background),
+            state = listState,
+            verticalArrangement = Arrangement.Bottom,
+            contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 46.dp else 16.dp)
         ) {
             var lastDate: String? = null
-            items(messages, key = { it.id }) { message ->
-                val messageDate = DateUtils.formatDateTime(message.timestamp).split(" | ")[0] // "5 мая 2025"
+            items(messages, key = { it.token }) { message ->
+                val messageDate = DateUtils.formatDateTime(message.timestamp).split(" | ")[0]
                 if (lastDate != null && lastDate != messageDate) {
-                    // Разделитель даты
                     Text(
                         text = messageDate,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(8.dp)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                            .padding(4.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(vertical = 6.dp),
                         textAlign = TextAlign.Center,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     )
                 }
                 ChatMessageItem(
                     message = message,
                     messages = messages,
                     isCurrentUser = message.senderId == currentUserId,
-                    status = messageStatuses[message.id] ?: MessageStatus.SENT,
+                    status = messageStatuses[message.token] ?: MessageStatus.SENT,
                     onReply = { replyingTo = it },
                     onDelete = {
                         scope.launch {
                             try {
-                                chatViewModel.deleteMessage(message.id)
+                                chatViewModel.deleteMessage(message.token)
                             } catch (e: Exception) {
                                 println("ChatScreen: Failed to delete message: ${e.message}")
                             }
                         }
-                    }
+                    },
+                    chatViewModel = chatViewModel
                 )
                 lastDate = messageDate
             }
@@ -242,113 +334,199 @@ fun ChatMessageItem(
     isCurrentUser: Boolean,
     status: MessageStatus,
     onReply: (ChatMessage) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    chatViewModel: ChatViewModel // Передаем ViewModel
 ) {
+    val userName by produceState(initialValue = "", key1 = message.senderId) {
+        value = chatViewModel.getUserName(message.senderId)
+    }
+
+    val alpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "MessageFadeIn"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = if (isCurrentUser) Arrangement.End else Arrangement.Start
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .alpha(alpha),
+        horizontalArrangement = if (isCurrentUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         val messageContent = @Composable {
-            Column(
+            val timeText = DateUtils.formatDateTime(message.timestamp).split(" | ")[1]
+            val timeWidth = with(LocalDensity.current) {
+                val fontSizePx = 10.sp.toPx()
+                val textWidth = fontSizePx * timeText.length * 0.1f
+                textWidth + (if (isCurrentUser) 16.dp.toPx() else 0f)
+            }.dp + 4.dp
+
+            Box(
                 modifier = Modifier
                     .wrapContentWidth()
-                    .widthIn(max = (0.8f * LocalConfiguration.current.screenWidthDp).dp)
+                    .wrapContentHeight()
+                    .shadow(4.dp, RoundedCornerShape(12.dp))
                     .background(
-                        if (isCurrentUser) MaterialTheme.colorScheme.secondaryContainer
-                        else MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(8.dp)
+                        if (isCurrentUser) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(12.dp)
                     )
-                    .padding(8.dp)
+                    .padding(start = 8.dp, top = 6.dp, end = 8.dp, bottom = 2.dp)
             ) {
-                // Отображение сообщения, на которое отвечаем
-                message.replyToId?.let { replyToId ->
-                    val repliedMessage = messages.find { it.id == replyToId }
-                    repliedMessage?.let {
-                        Column(
-                            modifier = Modifier
-                                .wrapContentWidth()
-                                .widthIn(max = (0.8f * LocalConfiguration.current.screenWidthDp).dp)
-                                .background(
-                                    if (isCurrentUser) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
-                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
-                                    shape = RoundedCornerShape(4.dp)
+                Column(
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .wrapContentHeight()
+                        .padding(bottom = 14.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    message.replyToToken?.let { replyToToken ->
+                        val repliedMessage = messages.find { it.token == replyToToken }
+                        repliedMessage?.let {
+                            val repliedUserName by produceState(initialValue = "Загрузка...", key1 = it.senderId) {
+                                value = chatViewModel.getUserName(it.senderId)
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .wrapContentWidth()
+                                    .background(
+                                        if (isCurrentUser) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = repliedUserName,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 )
-                                .padding(4.dp)
-                        ) {
-                            Text(
-                                text = "Пользователь ${it.senderId}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isCurrentUser) MaterialTheme.colorScheme.onSecondaryContainer
-                                else MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = it.text,
-                                fontSize = 12.sp,
-                                color = if (isCurrentUser) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
+                                Text(
+                                    text = it.text,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                        else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                    ),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(1.dp))
                         }
+                    }
+                    if (!isCurrentUser) {
+                        Text(
+                            text = userName,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                     }
+                    Row(
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .padding(end = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = message.text,
+                            modifier = Modifier
+                                .wrapContentWidth(),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            textAlign = TextAlign.Start
+                        )
+                    }
                 }
-                // Имя пользователя (только для чужих сообщений)
-                if (!isCurrentUser) {
-                    Text(
-                        text = "Пользователь ${message.senderId}", // Заменить на реальное имя
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                Text(
-                    text = message.text,
-                    fontSize = 16.sp,
-                    color = if (isCurrentUser) MaterialTheme.colorScheme.onSecondaryContainer
-                    else MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(modifier = Modifier.height(4.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
                 ) {
                     Text(
-                        text = DateUtils.formatDateTime(message.timestamp).split(" | ")[1], // "02:27"
-                        fontSize = 12.sp,
-                        color = if (isCurrentUser) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                        else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        text = timeText,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        )
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     if (isCurrentUser) {
                         when (status) {
                             MessageStatus.SENDING -> CircularProgressIndicator(
                                 modifier = Modifier.size(12.dp),
-                                strokeWidth = 2.dp
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                            MessageStatus.SENT -> Text("✓", fontSize = 12.sp, color = Color.Gray)
-                            MessageStatus.READ -> Text("✓✓", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                            MessageStatus.FAILED -> Text("!", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            MessageStatus.SENT -> Text(
+                                "✓",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+                            )
+                            MessageStatus.READ -> Text(
+                                "✓✓",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                            MessageStatus.FAILED -> Text(
+                                "!",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            )
                         }
                     }
                 }
             }
         }
 
-        if (!isCurrentUser) {
-            messageContent()
-        } else {
-            messageContent()
-        }
+        messageContent()
 
         Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            IconButton(onClick = { onReply(message) }) {
-                Icon(painterResource(id = R.drawable.reply), contentDescription = "Ответить")
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            IconButton(
+                onClick = { onReply(message) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    painterResource(id = R.drawable.reply),
+                    contentDescription = "Ответить",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Удалить")
+            if (isCurrentUser) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Удалить",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }

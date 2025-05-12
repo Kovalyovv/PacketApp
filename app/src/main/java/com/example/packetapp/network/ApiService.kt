@@ -121,6 +121,39 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
     }
+    suspend fun getUserNameById(accessToken: String, userId: Int): String {
+        return executeWithTokenRefresh { token ->
+            val response = client.get("$baseUrl/users/$userId") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            when (response.status) {
+                HttpStatusCode.OK -> {
+                    val user: UserDTO = response.body()
+                    user.name
+                }
+                HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+                HttpStatusCode.NotFound -> "Пользователь $userId"
+                else -> throw Exception("Ошибка получения имени пользователя: ${response.status.description}")
+            }
+        }
+    }
+
+    suspend fun getChatUserNames(accessToken: String, groupId: Int): Map<Int, String> {
+        return executeWithTokenRefresh { token ->
+            val response = client.get("$baseUrl/chats/$groupId/users") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+            when (response.status) {
+                HttpStatusCode.OK -> {
+                    val users: List<UserDTO> = response.body()
+                    users.associate { it.id to it.name }
+                }
+                HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+                HttpStatusCode.NotFound -> emptyMap()
+                else -> throw Exception("Ошибка получения пользователей чата: ${response.status.description}")
+            }
+        }
+    }
 
     suspend fun resetPassword(code: String, newPassword: String) {
         val response = client.post("$baseUrl/users/reset-password") {
