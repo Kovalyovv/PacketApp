@@ -34,8 +34,8 @@ data class GroupSummary(
 @Serializable
 data class GroupActivity(
     val type: String,
-    val userName: String,
-    val itemName: String,
+    val userName: String? = "User",
+    val itemName: String? = "User",
     val itemId: Int // Добавляем itemId
 )
 

@@ -17,7 +17,6 @@ class ChatViewModel(
 
     val messages: StateFlow<List<ChatMessage>> = chatClient.messages
 
-    // Кэш для имен пользователей
     private val userNamesCache = mutableMapOf<Int, String>()
 
     init {
@@ -33,7 +32,7 @@ class ChatViewModel(
                 println("ChatViewModel: Received new message: $message")
                 viewModelScope.launch {
                     preloadUserNames(groupId)
-                } // Предварительная загрузка имен при получении нового сообщения
+                }
             }
         } catch (e: Exception) {
             println("ChatViewModel: Failed to connect to chat: ${e.message}")
@@ -66,8 +65,6 @@ class ChatViewModel(
             }
         }
     }
-
-    // Получение имени пользователя по ID
     suspend fun getUserName(userId: Int): String {
         return userNamesCache[userId] ?: run {
             val name = apiService.getUserNameById(authManager.getAccessToken() ?: "", userId)
@@ -76,7 +73,6 @@ class ChatViewModel(
         }
     }
 
-    // Предварительная загрузка имен всех участников чата
     suspend fun preloadUserNames(groupId: Int) {
         val accessToken = authManager.getAccessToken() ?: return
         val userIds = try {

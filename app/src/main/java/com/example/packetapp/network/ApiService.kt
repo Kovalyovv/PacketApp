@@ -87,6 +87,31 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
         return prefs.getString("accessToken", "") ?: ""
     }
 
+    suspend fun updateUserProfile(
+        accessToken: String,
+        userId: Int,
+        name: String,
+        email: String,
+        password: String?
+    ): UserDTO {
+        return executeWithTokenRefresh { token ->
+            val response = client.put("$baseUrl/users/$userId") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+                contentType(ContentType.Application.Json)
+                setBody(mapOf(
+                    "name" to name,
+                    "email" to email,
+                    "password" to password
+                ))
+            }
+            when (response.status) {
+                HttpStatusCode.OK -> response.body<UserDTO>()
+                HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+                else -> throw Exception("Ошибка обновления профиля: ${response.status.description}")
+            }
+        }
+    }
+
     suspend fun requestResetCode(email: String): String {
         val response = client.post("$baseUrl/users/forgot-password") {
             contentType(ContentType.Application.Json)
@@ -224,6 +249,36 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
             else -> throw Exception("Ошибка сервера: ${response.status.description}")
         }
     }
+
+    suspend fun createGroup(accessToken: String, name: String, creatorId: Int): GroupDTO {
+        return client.post("$baseUrl/groups") {
+            header("Authorization", "Bearer $accessToken")
+            contentType(ContentType.Application.Json)
+            setBody(mapOf(
+                "name" to name,
+                "creatorId" to creatorId
+            ))
+        }.body()
+    }
+
+    suspend fun getInviteCode(accessToken: String, groupId: Int): String {
+        val response = client.get("$baseUrl/groups/$groupId/invite-code") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+        return when (response.status) {
+            HttpStatusCode.OK -> response.body<String>()
+            HttpStatusCode.Unauthorized -> throw Exception("Токен недействителен")
+            HttpStatusCode.NotFound -> throw Exception("Группа или инвайт-код не найдены")
+            else -> throw Exception("Ошибка сервера: ${response.status.description}")
+        }
+    }
+
+    suspend fun getGroupDetails(accessToken: String, groupId: Int): GroupDTO {
+        return client.get("$baseUrl/groups/$groupId") {
+            header("Authorization", "Bearer $accessToken")
+        }.body()
+    }
+
 
     suspend fun searchItems(accessToken: String, query: String): List<Item> {
         val response = client.get("$baseUrl/items/search") {
@@ -398,12 +453,7 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
         }
     }
 
-    @Serializable
-    data class ScanReceiptResponse(
-        val first: ReceiptDTO,
-        val second: ProcessedCheckData,
-        val message: String? = null
-    )
+
 
     suspend fun getCheckDataFromServer(accessToken: String, qrCode: String): ScanReceiptResponse {
         return executeWithTokenRefresh { accessToken ->
@@ -505,7 +555,7 @@ class ApiService(private val client: HttpClient, private val authManager: AuthMa
             throw Exception("Ошибка загрузки истории: ${response.status.description} (Status: ${response.status.value})")
         }
 
-        return response.body() // Прямое десериализация в List<Pair<ReceiptDTO, ProcessedCheckData>>
+        return response.body()
     }
 }
 
@@ -523,4 +573,11 @@ data class JoinGroupResponse(
     val groupId: Int,
     val groupName: String,
     val message: String
+)
+
+@Serializable
+data class ScanReceiptResponse(
+    val first: ReceiptDTO,
+    val second: ProcessedCheckData,
+    val message: String? = null
 )

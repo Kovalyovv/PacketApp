@@ -270,18 +270,17 @@ fun AppNavGraph(startDestination: String) {
                             launchSingleTop = true
                         }
                     },
-                    onNavigateToGroup = { groupId, highlightItemId ->
-                        println("Navigating to GroupScreen with groupId: $groupId, highlightItemId: $highlightItemId")
+                    onNavigateToGroup = { groupId, groupName, highlightItemId ->
+                        println("Navigating to GroupScreen with groupId: $groupId, groupName: $groupName, highlightItemId: $highlightItemId")
                         val route = if (highlightItemId != null) {
-                            "group/$groupId/$highlightItemId"
+                            "group/$groupId/$highlightItemId/$groupName" // Изменяем маршрут для включения groupName
                         } else {
-                            "group/$groupId"
+                            "group/$groupId/$groupName" // Новый маршрут с groupName
                         }
-                        navController.navigate(route){
+                        navController.navigate(route) {
                             popUpTo(navController.graph.startDestinationId)
                             launchSingleTop = true
                         }
-
                     }
                 )
             }
@@ -292,12 +291,12 @@ fun AppNavGraph(startDestination: String) {
             composable("groups") {
                 println("Navigating to GroupsScreen")
                 GroupsScreen(
-                    onNavigateToGroup = { groupId, highlightItemId ->
-                        println("Navigating to GroupScreen with groupId: $groupId, highlightItemId: $highlightItemId")
+                    onNavigateToGroup = { groupId, groupName, highlightItemId ->
+                        println("Navigating to GroupScreen with groupId: $groupId, groupName: $groupName, highlightItemId: $highlightItemId")
                         val route = if (highlightItemId != null) {
-                            "group/$groupId/$highlightItemId"
+                            "group/$groupId/$highlightItemId/$groupName"
                         } else {
-                            "group/$groupId"
+                            "group/$groupId/$groupName"
                         }
                         navController.navigate(route)
                     }
@@ -333,33 +332,41 @@ fun AppNavGraph(startDestination: String) {
             }
 
             composable(
-                route = "group/{groupId}",
-                arguments = listOf(navArgument("groupId") { type = NavType.IntType })
+                route = "group/{groupId}/{groupName}",
+                arguments = listOf(
+                    navArgument("groupId") { type = NavType.IntType },
+                    navArgument("groupName") { type = NavType.StringType }
+                )
             ) { backStackEntry ->
                 val groupId = backStackEntry.arguments?.getInt("groupId") ?: 0
-                println("Navigating to GroupScreen with groupId: $groupId")
+                val groupName = backStackEntry.arguments?.getString("groupName") ?: ""
+                println("Navigating to GroupScreen with groupId: $groupId, groupName: $groupName")
                 GroupScreen(
                     groupId = groupId,
+                    groupName = groupName,
                     onBack = { navController.popBackStack() },
                     onNavigateToChat = { navController.navigate("chat/$it") }
                 )
             }
             composable(
-                route = "group/{groupId}/{highlightItemId}?",
+                route = "group/{groupId}/{highlightItemId}/{groupName}?",
                 arguments = listOf(
                     navArgument("groupId") { type = NavType.IntType },
                     navArgument("highlightItemId") {
                         type = NavType.StringType
                         nullable = true
                         defaultValue = null
-                    }
+                    },
+                    navArgument("groupName") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
                 val groupId = backStackEntry.arguments?.getInt("groupId") ?: 0
                 val highlightItemId = backStackEntry.arguments?.getString("highlightItemId")?.toIntOrNull()
-                println("Navigating to GroupScreen with groupId: $groupId, highlightItemId: $highlightItemId")
+                val groupName = backStackEntry.arguments?.getString("groupName") ?: ""
+                println("Navigating to GroupScreen with groupId: $groupId, highlightItemId: $highlightItemId, groupName: $groupName")
                 GroupScreen(
                     groupId = groupId,
+                    groupName = groupName,
                     onBack = {
                         println("onBack called in GroupScreen, navigating back")
                         navController.popBackStack()

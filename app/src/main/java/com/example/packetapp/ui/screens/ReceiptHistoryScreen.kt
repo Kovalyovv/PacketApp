@@ -147,7 +147,7 @@ fun ReceiptCard(receipt: ReceiptDTO, checkData: ProcessedCheckData) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Чек #${receipt.id}",
+                    text = "Чек от ${DateUtils.formatDateTime(receipt.scannedAt)}",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -168,11 +168,7 @@ fun ReceiptCard(receipt: ReceiptDTO, checkData: ProcessedCheckData) {
                 fontSize = 16.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                text = "Скан: ${DateUtils.formatDateTime(receipt.scannedAt)}",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
+
             Spacer(modifier = Modifier.height(12.dp))
             // Список товаров
             if (items.isNotEmpty()) {
@@ -204,10 +200,10 @@ fun ReceiptCard(receipt: ReceiptDTO, checkData: ProcessedCheckData) {
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 350.dp) // Ограничение ширины для 45 символов
+                                modifier = Modifier.widthIn(max = 350.dp)
                             )
                             Text(
-                                text = "Цена: ${item.price} руб. | Кол-во: ${item.quantity}",
+                                text = "Цена: ${item.price} руб. | Кол-во: ${if (item.quantity == item.quantity.toInt().toDouble()) item.quantity.toInt() else item.quantity}",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

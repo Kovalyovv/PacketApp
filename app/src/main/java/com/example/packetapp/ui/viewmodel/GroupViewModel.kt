@@ -12,11 +12,13 @@ import com.example.packetapp.models.BuyItemRequest
 import kotlinx.coroutines.launch
 
 data class GroupUiState(
+    val isLoading: Boolean = false,
+    val isLoadingInviteCode: Boolean = false,
     val items: List<GroupListItem> = emptyList(),
     val searchQuery: String = "",
     val searchResults: List<Item> = emptyList(),
-    val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val inviteCode: String? = null
 )
 
 class GroupViewModel(
@@ -147,6 +149,27 @@ class GroupViewModel(
                 isLoading = false,
                 errorMessage = e.message ?: defaultMessage
             )
+        }
+    }
+
+
+
+    fun fetchInviteCode() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingInviteCode = true, errorMessage = null)
+            try {
+                val accessToken = authManager.getAccessToken()!!
+                val inviteCode = KtorClient.apiService.getInviteCode(accessToken, groupId)
+                _uiState.value = _uiState.value.copy(
+                    isLoadingInviteCode = false,
+                    inviteCode = inviteCode
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingInviteCode = false,
+                    errorMessage = e.message ?: "Произошла ошибка при получении инвайт-кода"
+                )
+            }
         }
     }
 }

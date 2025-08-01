@@ -1,5 +1,9 @@
 package com.example.packetapp.ui.screens
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,8 +16,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,18 +32,34 @@ import com.example.packetapp.data.AuthManager
 import com.example.packetapp.models.GroupListItem
 import com.example.packetapp.models.Item
 import com.example.packetapp.ui.viewmodel.GroupViewModel
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import com.example.packetapp.utils.NotificationHelper
+
+fun priorityToCategory(priority: Int): String {
+    return when (priority) {
+        0 -> "Высокий"
+        1 -> "Средний"
+        2 -> "Низкий"
+        else -> "Другой"
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupScreen(
     groupId: Int,
+    groupName: String,
     onBack: () -> Unit,
     onNavigateToChat: (Int) -> Unit,
     highlightItemId: Int? = null
 ) {
-    val authManager = AuthManager(LocalContext.current)
+    val context = LocalContext.current
+    val authManager = AuthManager(context)
     val viewModel = remember { GroupViewModel(authManager, groupId) }
     val uiState by viewModel.uiState
+
+    val clipboardManager = LocalClipboardManager.current
 
     var showSearchDialog by remember { mutableStateOf(false) }
     var showDetailsDialog by remember { mutableStateOf(false) }
@@ -43,17 +68,87 @@ fun GroupScreen(
     var selectedItemId by remember { mutableStateOf<Int?>(null) }
     var itemId by remember { mutableStateOf("") }
     var quantity by remember { mutableStateOf("1") }
-    var priority by remember { mutableStateOf("0") }
+    var priority by remember { mutableStateOf(1) }
     var budget by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var buyQuantity by remember { mutableStateOf("") }
+    var showInviteCodeDialog by remember { mutableStateOf(false) }
+
+    // Инициализация канала уведомлений
+    LaunchedEffect(Unit) {
+        NotificationHelper.createNotificationChannel(context)
+    }
+
+    // Запрос разрешения на уведомления
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            // Разрешение получено
+        } else {
+            Toast.makeText(context, "Разрешение на уведомления отклонено", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(showInviteCodeDialog) {
+        if (showInviteCodeDialog) {
+            viewModel.fetchInviteCode()
+        }
+    }
+
+    if (showInviteCodeDialog) {
+        AlertDialog(
+            onDismissRequest = { showInviteCodeDialog = false },
+            title = { Text("Инвайт-код группы") },
+            text = {
+                Column {
+                    if (uiState.inviteCode != null) {
+                        Text(
+                            text = uiState.inviteCode!!,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .padding(bottom = 16.dp)
+                                .clickable {
+                                    clipboardManager.setText(AnnotatedString(uiState.inviteCode!!))
+                                    Toast.makeText(
+                                        context,
+                                        "Инвайт-код скопирован в буфер обмена",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        )
+                    } else if (uiState.isLoadingInviteCode) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (uiState.errorMessage != null) {
+                        Text(
+                            text = uiState.errorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showInviteCodeDialog = false }) {
+                    Text("Закрыть")
+                }
+            },
+            dismissButton = {}
+        )
+    }
 
     if (showSearchDialog) {
         AlertDialog(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .fillMaxHeight(0.9f)
-                .padding(0.dp),
+                .padding(4.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = {
                 showSearchDialog = false
@@ -65,6 +160,7 @@ fun GroupScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .fillMaxHeight()
+                        .padding(8.dp)
                 ) {
                     SearchField(
                         query = uiState.searchQuery,
@@ -75,20 +171,26 @@ fun GroupScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     if (uiState.searchQuery.isNotEmpty()) {
                         if (uiState.searchResults.isEmpty()) {
-                            Text(
-                                text = "Товары не найдены",
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
-                                    .wrapContentHeight(align = Alignment.CenterVertically),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                fontSize = 16.sp
-                            )
+                            ) {
+                                Text(
+                                    text = "Товары не найдены",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .wrapContentHeight(align = Alignment.CenterVertically),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    fontSize = 16.sp
+                                )
+                            }
                         } else {
                             LazyColumn(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1f)
+                                    .weight(1f),
+                                contentPadding = PaddingValues(vertical = 16.dp)
                             ) {
                                 items(uiState.searchResults) { item ->
                                     SearchResultItem(
@@ -144,20 +246,21 @@ fun GroupScreen(
 
         AlertDialog(
             modifier = Modifier
-                .fillMaxWidth(fraction = 0.99f)
-                .fillMaxHeight(fraction = 0.6f),
+                .fillMaxWidth(0.91f)
+                .fillMaxHeight(0.67f),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = {
                 showDetailsDialog = false
                 selectedItem = null
                 itemId = ""
                 quantity = "1"
-                priority = "0"
+                priority = 1
                 budget = ""
             },
             title = {
                 Text(
-                    if (selectedItem != null) "Добавить ${selectedItem?.name}"
-                    else "Добавить товар вручную"
+                    text = if (selectedItem != null) "Добавить ${selectedItem?.name}" else "Добавить товар вручную",
+                    style = MaterialTheme.typography.titleMedium
                 )
             },
             text = {
@@ -182,20 +285,45 @@ fun GroupScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = priority,
-                        onValueChange = { priority = it },
-                        label = { Text("Приоритет") },
-                        modifier = Modifier.fillMaxWidth()
+
+                    Text(
+                        text = "Приоритет",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(bottom = 4.dp)
                     )
+                    Column {
+                        listOf(
+                            0 to "Высокий",
+                            1 to "Средний",
+                            2 to "Низкий"
+                        ).forEach { (value, label) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 1.dp)
+                            ) {
+                                RadioButton(
+                                    selected = priority == value,
+                                    onClick = { priority = value }
+                                )
+                                Text(
+                                    text = label,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = budget,
                         onValueChange = { budget = it },
-                        label = { Text("Бюджет") },
+                        label = { Text("Цена") },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -207,37 +335,49 @@ fun GroupScreen(
                             selectedItem = null
                             itemId = ""
                             quantity = "1"
-                            priority = "0"
+                            priority = 1
                             budget = ""
                         }) { Text("Отмена") }
                         Button(
                             onClick = {
                                 val quantityInt = quantity.toIntOrNull()
-                                val priorityInt = priority.toIntOrNull()
+                                val priorityInt = priority
                                 var budgetInt: Int? = budget.toIntOrNull()
                                 if (budgetInt == null && selectedItem != null && quantityInt != null) {
                                     budgetInt = selectedItem!!.price * quantityInt
                                 }
-                                if (quantityInt != null && priorityInt != null) {
+                                if (quantityInt != null) {
                                     if (selectedItem != null) {
                                         viewModel.addItem(selectedItem!!.id, quantityInt, priorityInt, budgetInt)
+                                        // Отправляем уведомление только если разрешение есть
+                                        NotificationHelper.sendNotification(
+                                            context,
+                                            "Товар добавлен",
+                                            "Добавлен товар: ${selectedItem!!.name}, количество: $quantityInt",
+                                            selectedItem!!.id
+                                        )
                                     } else {
                                         val itemIdInt = itemId.toIntOrNull()
                                         if (itemIdInt != null) {
                                             viewModel.addItem(itemIdInt, quantityInt, priorityInt, budgetInt)
+                                            NotificationHelper.sendNotification(
+                                                context,
+                                                "Товар добавлен",
+                                                "Добавлен товар с ID: $itemIdInt, количество: $quantityInt",
+                                                itemIdInt
+                                            )
                                         }
                                     }
                                     showDetailsDialog = false
                                     selectedItem = null
                                     itemId = ""
                                     quantity = "1"
-                                    priority = "0"
+                                    priority = 1
                                     budget = ""
                                 }
                             },
                             enabled = (selectedItem != null || itemId.toIntOrNull() != null) &&
-                                    quantity.toIntOrNull() != null &&
-                                    priority.toIntOrNull() != null
+                                    quantity.toIntOrNull() != null
                         ) { Text("Добавить") }
                     }
                 }
@@ -251,6 +391,7 @@ fun GroupScreen(
         LaunchedEffect(selectedItemId) {
             if (selectedItem != null) {
                 buyQuantity = selectedItem.quantity.toString()
+                price = selectedItem.budget.toString()
             }
         }
         AlertDialog(
@@ -280,6 +421,13 @@ fun GroupScreen(
                         val priceInt = price.toIntOrNull()
                         if (quantityInt != null && priceInt != null && quantityInt > 0) {
                             viewModel.buyItem(selectedItemId!!, quantityInt, priceInt)
+                            // Отправляем уведомление
+                            NotificationHelper.sendNotification(
+                                context,
+                                "Товар куплен",
+                                "Куплен товар: ${selectedItem?.itemName}, количество: $quantityInt",
+                                selectedItemId!!
+                            )
                             showBuyDialog = false
                             selectedItemId = null
                             buyQuantity = ""
@@ -302,10 +450,19 @@ fun GroupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Группа") },
+                title = { Text("Группа $groupName") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showInviteCodeDialog = true }) {
+                        Icon(
+                            painter = painterResource(id = android.R.drawable.ic_menu_manage),
+                            contentDescription = "Показать инвайт-код",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             )
@@ -318,14 +475,22 @@ fun GroupScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Icon(painterResource(id = R.drawable.chat_64d), contentDescription = "Чат группы", tint = MaterialTheme.colorScheme.onPrimary)
+                    Icon(
+                        painterResource(id = R.drawable.chat_64d),
+                        contentDescription = "Чат группы",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
                 FloatingActionButton(
                     onClick = { showSearchDialog = true },
                     containerColor = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Добавить товар", tint = MaterialTheme.colorScheme.onPrimary)
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Добавить товар",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         }
@@ -334,7 +499,7 @@ fun GroupScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
         ) {
             if (uiState.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -345,8 +510,18 @@ fun GroupScreen(
                     fontSize = 18.sp
                 )
             } else {
-                LazyColumn {
-                    items(uiState.items) { item ->
+                LazyColumn(
+                    contentPadding = PaddingValues(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = uiState.items.sortedWith(
+                            compareBy(
+                                { it.priority },
+                                { it.itemName }
+                            )
+                        )
+                    ) { item ->
                         GroupListItem(
                             item = item,
                             onBuy = {
@@ -370,8 +545,6 @@ fun GroupScreen(
     }
 }
 
-
-
 @Composable
 fun SearchResultItem(
     item: Item,
@@ -380,8 +553,7 @@ fun SearchResultItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(1.dp), // Убираем возможные внутренние отступы
-
+            .padding(1.dp),
         shape = RoundedCornerShape(8.dp),
         elevation = CardDefaults.cardElevation(2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -392,7 +564,9 @@ fun SearchResultItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     text = item.name,
                     style = MaterialTheme.typography.bodyLarge,
@@ -432,26 +606,63 @@ fun GroupListItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(4.dp)
+            .padding(vertical = 8.dp)
+            .heightIn(min = 120.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 12.dp,
+            pressedElevation = 16.dp
+        ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp).padding(horizontal = 6.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Товар: ${item.itemName}", fontSize = 16.sp)
-                Text(text = "Количество: ${item.quantity}", fontSize = 14.sp)
-                Text(text = "Приоритет: ${item.priority}", fontSize = 14.sp)
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = item.itemName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Количество: ${item.quantity}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Приоритет: ${priorityToCategory(item.priority)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 item.budget?.let {
-                    Text(text = "Бюджет: $it руб.", fontSize = 14.sp)
+                    Text(
+                        text = "Цена: $it руб.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-            Button(onClick = onBuy) {
-                Text("Куплено")
+            Button(
+                onClick = onBuy,
+                modifier = Modifier
+                    .height(40.dp)
+                    .padding(start = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Куплено", fontSize = 14.sp)
             }
         }
     }

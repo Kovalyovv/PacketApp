@@ -28,11 +28,26 @@ class MainViewModel(private val authManager: AuthManager) : ViewModel() {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
                 val accessToken = getValidAccessToken()
-                val groups = KtorClient.apiService.getUserGroups(accessToken)
+                val groups = KtorClient.apiService.getUserGroups(accessToken) ?: emptyList()
+                groups.forEach { group ->
+                    if (group.groupName.isEmpty()) {
+                        println("Warning: Group with ID ${group.groupId} has empty name")
+                    }
+                    group.lastActivity?.let { activity ->
+                        if (activity.type.isEmpty()) {
+                            println("Warning: Activity in group ${group.groupId} has empty type")
+                        }
+                        if (activity.itemId == 0) { // Проверка на некорректный itemId
+                            println("Warning: Activity in group ${group.groupId} has invalid itemId")
+                        }
+                    }
+                }
                 _uiState.value = _uiState.value.copy(groupSummaries = groups, isLoading = false)
             } catch (e: Exception) {
+                println("Error loading groups: ${e.message}")
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
+                    groupSummaries = emptyList(),
                     errorMessage = e.message ?: "Ошибка загрузки групп"
                 )
             }

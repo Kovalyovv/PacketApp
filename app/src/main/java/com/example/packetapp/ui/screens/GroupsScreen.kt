@@ -3,9 +3,11 @@ package com.example.packetapp.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,7 +29,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsScreen(
-    onNavigateToGroup: (Int, Int?) -> Unit
+    onNavigateToGroup: (Int, String, Int?) -> Unit
 ) {
     val authManager = AuthManager(LocalContext.current)
     val mainViewModel = remember { MainViewModel(authManager) }
@@ -37,35 +39,43 @@ fun GroupsScreen(
     val receiptViewModel = remember { ReceiptViewModel(authManager) }
 
     var showJoinDialog by remember { mutableStateOf(false) }
+    var showCreateDialog by remember { mutableStateOf(false) }
     var inviteCode by remember { mutableStateOf("") }
+    var groupName by remember { mutableStateOf("") }
 
-    // Для отображения Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // Обновляем список групп и показываем уведомление после завершения операции
-    LaunchedEffect(joinGroupUiState.isSuccess, joinGroupUiState.errorMessage) {
+    // Обновляем список групп только при успехе
+    LaunchedEffect(joinGroupUiState.isSuccess) {
         if (joinGroupUiState.isSuccess) {
-            mainViewModel.loadGroups() // Обновляем список групп
+            mainViewModel.loadGroups()
             coroutineScope.launch {
                 snackbarHostState.showSnackbar("Успешно присоединились к группе!")
-            }
-            joinGroupViewModel.clearState()
-        } else if (joinGroupUiState.errorMessage != null) {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar(joinGroupUiState.errorMessage!!)
             }
             joinGroupViewModel.clearState()
         }
     }
 
-    // Диалоговое окно для ввода инвайт-кода
-    if (showJoinDialog) {
+    // Показываем Snackbar при ошибке
+    LaunchedEffect(joinGroupUiState.errorMessage) {
+        if (joinGroupUiState.errorMessage != null && !joinGroupUiState.isLoading) {
+            val errorMsg = joinGroupUiState.errorMessage // Захватываем значение
+            coroutineScope.launch {
+                if (errorMsg != null) {
+                    snackbarHostState.showSnackbar(errorMsg)
+                } // Используем захваченное значение
+            }
+            joinGroupViewModel.clearState()
+        }
+    }
+
+    // Диалоговое окно для создания группы
+    if (showCreateDialog) {
         Dialog(
             onDismissRequest = {
-                showJoinDialog = false
-                inviteCode = ""
-                joinGroupViewModel.clearState()
+                showCreateDialog = false
+                groupName = ""
             }
         ) {
             Card(
@@ -73,7 +83,80 @@ fun GroupsScreen(
                     .fillMaxWidth(fraction = 0.9f)
                     .wrapContentHeight()
                     .padding(0.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Создать новую группу",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
 
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { groupName = it },
+                        label = { Text("Название группы") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Done
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(
+                            onClick = {
+                                showCreateDialog = false
+                                groupName = ""
+                            }
+                        ) {
+                            Text("Отмена")
+                        }
+
+                        Button(
+                            onClick = {
+                                if (groupName.isNotBlank()) {
+                                    val userId = authManager.getUserId() ?: return@Button
+                                    coroutineScope.launch {
+                                        try {
+                                            val accessToken = authManager.getAccessToken() ?: return@launch
+                                            apiService.createGroup(accessToken, groupName, userId)
+                                            mainViewModel.loadGroups()
+                                            snackbarHostState.showSnackbar("Группа успешно создана!")
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar("Ошибка создания группы: ${e.message}")
+                                        }
+                                    }
+                                    showCreateDialog = false
+                                    groupName = ""
+                                }
+                            },
+                            enabled = groupName.isNotBlank()
+                        ) {
+                            Text("Создать")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Диалоговое окно для ввода инвайт-кода
+    if (showJoinDialog) {
+        Dialog(
+            onDismissRequest = { showJoinDialog = false }
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(fraction = 0.9f)
+                    .wrapContentHeight()
+                    .padding(0.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -92,7 +175,8 @@ fun GroupsScreen(
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Done
-                        )
+                        ),
+                        enabled = !joinGroupUiState.isLoading
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -116,7 +200,6 @@ fun GroupsScreen(
                                 if (inviteCode.isNotBlank()) {
                                     joinGroupViewModel.joinGroup(inviteCode)
                                     showJoinDialog = false
-                                    inviteCode = ""
                                 }
                             },
                             enabled = inviteCode.isNotBlank() && !joinGroupUiState.isLoading
@@ -124,21 +207,48 @@ fun GroupsScreen(
                             Text("Присоединиться")
                         }
                     }
+
+                    if (joinGroupUiState.isLoading) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    }
+                    joinGroupUiState.errorMessage?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = it,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+                    }
                 }
             }
         }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }, // Используем snackbarHost для Material 3
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Мои группы") }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showJoinDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Присоединиться к группе")
+            Row {
+                FloatingActionButton(
+                    onClick = { showCreateDialog = true },
+                    modifier = Modifier.padding(end = 16.dp),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.Create, contentDescription = "Создать группу")
+                }
+                FloatingActionButton(
+                    onClick = { showJoinDialog = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Присоединиться к группе")
+                }
             }
         }
     ) { padding ->
@@ -146,7 +256,7 @@ fun GroupsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
         ) {
             if (mainUiState.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -157,13 +267,16 @@ fun GroupsScreen(
                     fontSize = 18.sp
                 )
             } else {
-                LazyColumn {
+                LazyColumn(
+                    contentPadding = PaddingValues(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     items(mainUiState.groupSummaries) { summary ->
                         GroupSummaryItem(
                             summary = summary,
-                            onClick = { onNavigateToGroup(summary.groupId, null) },
-                            onActivityClick = { itemId ->
-                                onNavigateToGroup(summary.groupId, itemId)
+                            onClick = { groupId, groupName -> onNavigateToGroup(groupId, groupName, null) },
+                            onActivityClick = { groupId, groupName, itemId ->
+                                onNavigateToGroup(groupId, groupName, itemId)
                             }
                         )
                     }

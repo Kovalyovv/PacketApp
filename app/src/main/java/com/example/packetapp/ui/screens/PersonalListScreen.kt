@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
@@ -55,7 +57,7 @@ fun PersonalListScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp), // Отступы для теней
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (!uiState.showHistory) {
@@ -75,7 +77,8 @@ fun PersonalListScreen() {
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
                         LazyColumn(
-                            modifier = Modifier.heightIn(max = 900.dp)
+                            modifier = Modifier.heightIn(max = 900.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp) // Для теней
                         ) {
                             items(uiState.searchResults) { item ->
                                 SearchResultItem(
@@ -99,11 +102,14 @@ fun PersonalListScreen() {
                         fontSize = 18.sp
                     )
                 } else {
-                    LazyColumn {
+                    LazyColumn(
+                        contentPadding = PaddingValues(vertical = 16.dp), // Для теней
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         items(uiState.personalList) { item ->
                             PersonalListItemCard(
                                 item = item,
-                                onMarkPurchased = { viewModel.markAsPurchased(item.id) } // Убрали price
+                                onMarkPurchased = { viewModel.markAsPurchased(item.id) }
                             )
                         }
                     }
@@ -117,7 +123,10 @@ fun PersonalListScreen() {
                         fontSize = 18.sp
                     )
                 } else {
-                    LazyColumn {
+                    LazyColumn(
+                        contentPadding = PaddingValues(vertical = 16.dp), // Для теней
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         items(uiState.purchaseHistory) { item ->
                             PurchaseHistoryItemCard(item = item)
                         }
@@ -224,8 +233,14 @@ fun PersonalListItemCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .padding(vertical = 8.dp)
+            .heightIn(min = 100.dp), // Минимальная высота для теней
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 12.dp,
+            pressedElevation = 16.dp
+        ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
             modifier = Modifier
@@ -235,22 +250,35 @@ fun PersonalListItemCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f, fill = true)) {
-
-                Text(text = item.itemName, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = item.itemName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Количество: ${item.quantity}",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "Цена: ${item.price} руб.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Button(
                 onClick = { onMarkPurchased(item.price) },
-                enabled = true
+                modifier = Modifier
+                    .height(40.dp)
+                    .padding(start = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Куплено")
+                Text("Куплено", fontSize = 14.sp)
             }
         }
     }
@@ -261,28 +289,35 @@ fun PurchaseHistoryItemCard(item: PurchaseHistoryItem) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .wrapContentHeight(), // Позволяем карточке подстраиваться под содержимое
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .padding(vertical = 8.dp) // Увеличены отступы
+            .heightIn(min = 90.dp), // Минимальная высота для теней
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 12.dp, // Увеличено
+            pressedElevation = 16.dp
+        ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp)
-                .padding(horizontal = 2.dp)
+                .padding(16.dp)
         ) {
             Text(
-                text = "Товар: ${item.itemName}",
-                fontSize = 14.sp,
-                modifier = Modifier.wrapContentHeight() // Текст может занимать несколько строк
+                text = "${item.itemName}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Количество: ${item.quantity} | Цена: ${item.price} руб.",
-                fontSize = 12.sp
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = "Куплено: ${DateUtils.formatDateTime(item.purchasedAt)}",
-                fontSize = 12.sp
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

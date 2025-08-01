@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.packetapp"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.packetapp"
@@ -39,7 +39,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.8"
+        kotlinCompilerExtensionVersion = "1.5.15"
     }
     packaging {
         resources {
@@ -65,19 +65,18 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3:1.1.2")
-    implementation ("androidx.compose.animation:animation:1.6.8")
+    implementation ("androidx.compose.animation:animation:1.8.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
-    // Google Generative AI
-    implementation("com.google.ai.client.generativeai:generativeai:0.8.0")
+
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.7.7")
-
+    implementation ("androidx.compose.foundation:foundation:1.8.2")
     // Ktor Client
     implementation("io.ktor:ktor-client-core:2.3.12")
 

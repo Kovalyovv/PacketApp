@@ -16,7 +16,7 @@ data class LoginUiState(
 
 class LoginViewModel(
     private val apiService: ApiService,
-    private val authManager: AuthManager // Используем AuthManager вместо SharedPreferences
+    private val authManager: AuthManager
 ) : ViewModel() {
 
     private val _uiState = mutableStateOf(LoginUiState())
